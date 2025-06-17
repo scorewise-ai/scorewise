@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Upload Assignment - ScoreWise AI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .gradient-bg { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .file-drop-zone {
+            border: 2px dashed #d1d5db;
+            transition: all 0.3s ease;
+        }
+        .file-drop-zone:hover, .file-drop-zone.dragover {
+            border-color: #667eea;
+            background-color: #f8fafc;
+        }
+        .progress-bar {
+            transition: width 0.3s ease;
+        }
+    </style>
+</head>
+<body class="min-h-screen bg-gray-50">
+    <!-- Navigation -->
+    <nav class="bg-white shadow-sm border-b">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <div class="flex items-center space-x-4">
+                    <a href="/" class="text-2xl font-bold text-indigo-600">ScoreWise AI</a>
+                    <span class="text-gray-500">|</span>
+                    <span class="text-gray-600">Assignment Upload</span>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <a href="/dashboard" class="text-gray-600 hover:text-indigo-600">Dashboard</a>
+                    <a href="/pricing" class="text-gray-600 hover:text-indigo-600">Pricing</a>
+                    <button id="logout-btn" class="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600">Logout</button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="max-w-4xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
+        <div class="bg-white rounded-lg shadow-lg p-8">
+            <div class="text-center mb-8">
+                <h1 class="text-3xl font-bold text-gray-900 mb-2">Upload Assignment for AI Grading</h1>
+                <p class="text-gray-600">Upload your assignment and student submissions for AI-powered grading</p>
+            </div>
+
+            <form id="upload-form" class="space-y-8">
+                <!-- Subject Selection -->
+                <div>
+                    <label for="subject" class="block text-sm font-medium text-gray-700 mb-2">
+                        Select Subject <span class="text-red-500">*</span>
+                    </label>
+                    <select id="subject" name="subject" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                        <option value="">Choose a subject...</option>
+                        <option value="mathematics">Mathematics</option>
+                        <option value="science">Science</option>
+                        <option value="english">English/Language Arts</option>
+                        <option value="history">History/Social Studies</option>
+                        <option value="computer_science">Computer Science</option>
+                        <option value="chemistry">Chemistry</option>
+                        <option value="physics">Physics</option>
+                        <option value="biology">Biology</option>
+                        <option value="economics">Economics</option>
+                        <option value="psychology">Psychology</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+
+                <!-- Assignment Type -->
+                <div>
+                    <label for="assignment_type" class="block text-sm font-medium text-gray-700 mb-2">
+                        Assignment Type <span class="text-red-500">*</span>
+                    </label>
+                    <select id="assignment_type" name="assignment_type" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                        <option value="">Choose assignment type...</option>
+                        <option value="essay">Essay</option>
+                        <option value="homework">Homework</option>
+                        <option value="quiz">Quiz</option>
+                        <option value="exam">Exam</option>
+                        <option value="project">Project</option>
+                        <option value="lab_report">Lab Report</option>
+                        <option value="research_paper">Research Paper</option>
+                        <option value="problem_set">Problem Set</option>
+                    </select>
+                </div>
+
+                <!-- Assignment Upload (Required) -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        Assignment PDF <span class="text-red-500">*</span>
+                    </label>
+                    <div class="file-drop-zone border-2 border-dashed border-gray-300 rounded-lg p-6 text-center bg-gray-50" id="assignment-drop-zone">
+                        <input type="file" id="assignment-file" name="assignment_file" accept=".pdf" required class="hidden">
+                        <div class="space-y-2">
+                            <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                                <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                            <p class="text-gray-600">Click to upload or drag and drop</p>
+                            <p class="text-sm text-gray-500">PDF files only (Max 10MB)</p>
+                        </div>
+                        <div id="assignment-file-info" class="mt-4 hidden">
+                            <p class="text-sm text-green-600 font-medium" id="assignment-file-name"></p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Student Submissions Upload (Required) -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        Student Submissions <span class="text-red-500">*</span>
+                    </label>
+                    <div class="file-drop-zone border-2 border-dashed border-gray-300 rounded-lg p-6 text-center bg-gray-50" id="submissions-drop-zone">
+                        <input type="file" id="submissions-file" name="submissions_file" accept=".pdf" multiple required class="hidden">
+                        <div class="space-y-2">
+                            <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                                <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                            <p class="text-gray-600">Click to upload or drag and drop</p>
+                            <p class="text-sm text-gray-500">PDF files only, multiple files allowed (Max 10MB each)</p>
+                        </div>
+                        <div id="submissions-file-info" class="mt-4 hidden">
+                            <p class="text-sm text-green-600 font-medium" id="submissions-file-list"></p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Solution Set Upload (Optional) -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        Instructor Solution Set <span class="text-gray-500">(Optional)</span>
+                    </label>
+                    <div class="file-drop-zone border-2 border-dashed border-gray-300 rounded-lg p-6 text-center bg-gray-50" id="solution-drop-zone">
+                        <input type="file" id="solution-file" name="solution_file" accept=".pdf" class="hidden">
+                        <div class="space-y-2">
+                            <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                                <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                            <p class="text-gray-600">Click to upload or drag and drop</p>
+                            <p class="text-sm text-gray-500">PDF file only (Max 10MB)</p>
+                        </div>
+                        <div id="solution-file-info" class="mt-4 hidden">
+                            <p class="text-sm text-green-600 font-medium" id="solution-file-name"></p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Custom Rubric Upload (Optional) -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        Custom Rubric <span class="text-gray-500">(Optional - overrides default rubric)</span>
+                    </label>
+                    <div class="file-drop-zone border-2 border-dashed border-gray-300 rounded-lg p-6 text-center bg-gray-50" id="rubric-drop-zone">
+                        <input type="file" id="rubric-file" name="rubric_file" accept=".pdf" class="hidden">
+                        <div class="space-y-2">
+                            <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                                <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                            <p class="text-gray-600">Click to upload or drag and drop</p>
+                            <p class="text-sm text-gray-500">PDF file only (Max 10MB)</p>
+                        </div>
+                        <div id="rubric-file-info" class="mt-4 hidden">
+                            <p class="text-sm text-green-600 font-medium" id="rubric-file-name"></p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Progress Bar -->
+                <div id="progress-container" class="hidden">
+                    <div class="bg-gray-200 rounded-full h-2 mb-4">
+                        <div id="progress-bar" class="progress-bar bg-indigo-600 h-2 rounded-full" style="width: 0%"></div>
+                    </div>
+                    <p id="progress-text" class="text-sm text-gray-600 text-center">Starting upload...</p>
+                </div>
+
+                <!-- Submit Button -->
+                <div class="flex justify-center">
+                    <button type="submit" id="submit-btn" class="px-8 py-3 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                        Start AI Grading
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // File upload handling
+        function setupFileUpload(dropZoneId, inputId, fileInfoId, fileNameId, multiple = false) {
+            const dropZone = document.getElementById(dropZoneId);
+            const fileInput = document.getElementById(inputId);
+            const fileInfo = document.getElementById(fileInfoId);
+            const fileName = document.getElementById(fileNameId);
+
+            // Click to upload
+            dropZone.addEventListener('click', () => fileInput.click());
+
+            // Drag and drop
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.classList.add('dragover');
+            });
+
+            dropZone.addEventListener('dragleave', () => {
+                dropZone.classList.remove('dragover');
+            });
+
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('dragover');
+                
+                const files = Array.from(e.dataTransfer.files);
+                const pdfFiles = files.filter(file => file.type === 'application/pdf');
+                
+                if (pdfFiles.length !== files.length) {
+                    alert('Only PDF files are allowed!');
+                    return;
+                }
+
+                if (!multiple && pdfFiles.length > 1) {
+                    alert('Only one file allowed for this field!');
+                    return;
+                }
+
+                // Check file size (10MB limit)
+                const maxSize = 10 * 1024 * 1024; // 10MB
+                const oversizedFiles = pdfFiles.filter(file => file.size > maxSize);
+                if (oversizedFiles.length > 0) {
+                    alert('Some files exceed the 10MB limit!');
+                    return;
+                }
+
+                // Create FileList object
+                const dataTransfer = new DataTransfer();
+                pdfFiles.forEach(file => dataTransfer.items.add(file));
+                fileInput.files = dataTransfer.files;
+
+                // Show file info
+                showFileInfo(pdfFiles, fileInfo, fileName, multiple);
+            });
+
+            // File input change
+            fileInput.addEventListener('change', (e) => {
+                const files = Array.from(e.target.files);
+                showFileInfo(files, fileInfo, fileName, multiple);
+            });
+        }
+
+        function showFileInfo(files, fileInfo, fileName, multiple) {
+            if (files.length > 0) {
+                fileInfo.classList.remove('hidden');
+                if (multiple) {
+                    fileName.textContent = `${files.length} file(s) selected: ${files.map(f => f.name).join(', ')}`;
+                } else {
+                    fileName.textContent = files[0].name;
+                }
+            } else {
+                fileInfo.classList.add('hidden');
+            }
+        }
+
+        // Validate PDF files
+        function validatePDFFile(file) {
+            return file.type === 'application/pdf';
+        }
+
+        // Setup all file uploads
+        setupFileUpload('assignment-drop-zone', 'assignment-file', 'assignment-file-info', 'assignment-file-name');
+        setupFileUpload('submissions-drop-zone', 'submissions-file', 'submissions-file-info', 'submissions-file-list', true);
+        setupFileUpload('solution-drop-zone', 'solution-file', 'solution-file-info', 'solution-file-name');
+        setupFileUpload('rubric-drop-zone', 'rubric-file', 'rubric-file-info', 'rubric-file-name');
+
+        // Form submission
+        document.getElementById('upload-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const submitBtn = document.getElementById('submit-btn');
+            const progressContainer = document.getElementById('progress-container');
+            const progressBar = document.getElementById('progress-bar');
+            const progressText = document.getElementById('progress-text');
+
+            // Validate required fields
+            const subject = document.getElementById('subject').value;
+            const assignmentType = document.getElementById('assignment_type').value;
+            const assignmentFile = document.getElementById('assignment-file').files[0];
+            const submissionsFiles = document.getElementById('submissions-file').files;
+
+            if (!subject || !assignmentType || !assignmentFile || submissionsFiles.length === 0) {
+                alert('Please fill in all required fields and upload the required files.');
+                return;
+            }
+
+            // Disable submit button and show progress
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Processing...';
+            progressContainer.classList.remove('hidden');
+
+            // Create FormData
+            const formData = new FormData();
+            formData.append('subject', subject);
+            formData.append('assignment_type', assignmentType);
+            formData.append('assignment_file', assignmentFile);
+            
+            // Add all submission files
+            for (let i = 0; i < submissionsFiles.length; i++) {
+                formData.append('submissions_files', submissionsFiles[i]);
+            }
+
+            // Add optional files if present
+            const solutionFile = document.getElementById('solution-file').files[0];
+            if (solutionFile) {
+                formData.append('solution_file', solutionFile);
+            }
+
+            const rubricFile = document.getElementById('rubric-file').files[0];
+            if (rubricFile) {
+                formData.append('rubric_file', rubricFile);
+            }
+
+            try {
+                // Upload files
+                progressText.textContent = 'Uploading files...';
+                progressBar.style.width = '30%';
+
+                const response = await fetch('/api/upload-assignment', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    progressText.textContent = 'Starting AI grading...';
+                    progressBar.style.width = '60%';
+
+                    // Start grading process
+                    const gradingResponse = await fetch('/api/start-grading', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            task_id: result.task_id
+                        })
+                    });
+
+                    if (gradingResponse.ok) {
+                        progressText.textContent = 'Grading completed! Redirecting to dashboard...';
+                        progressBar.style.width = '100%';
+                        
+                        setTimeout(() => {
+                            window.location.href = `/dashboard?task_id=${result.task_id}`;
+                        }, 2000);
+                    } else {
+                        throw new Error('Failed to start grading process');
+                    }
+                } else {
+                    throw new Error(result.message || 'Upload failed');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('An error occurred during upload. Please try again.');
+                
+                // Reset form
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Start AI Grading';
+                progressContainer.classList.add('hidden');
+                progressBar.style.width = '0%';
+            }
+        });
+
+        // Logout functionality
+        document.getElementById('logout-btn').addEventListener('click', async () => {
+            try {
+                const response = await fetch('/api/logout', {
+                    method: 'POST'
+                });
+                if (response.ok) {
+                    window.location.href = '/';
+                }
+            } catch (error) {
+                console.error('Logout error:', error);
+                window.location.href = '/';
+            }
+        });
+    </script>
+    <script src="/static/app.js"></script>
+</body>
+</html>
