@@ -18,6 +18,7 @@ import tempfile
 import fitz  # PyMuPDF for text percentage detection
 from pdf2image import convert_from_path
 from PIL import Image
+import platform
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -68,6 +69,11 @@ class ScoreWiseGrader:
             return set(word.strip().lower() for word in f if word.strip())
 
     COMMON_ENGLISH_WORDS = load_word_set()
+
+    def get_poppler_path():
+        if platform.system() == "Windows":
+            return r"C:\poppler-24.08.0\Library\bin"
+        return None
 
     def __init__(self):
         self.api_key = PERPLEXITY_API_KEY
@@ -373,8 +379,11 @@ class ScoreWiseGrader:
         try:
             with tempfile.TemporaryDirectory() as temp_dir:
                 # Convert PDF to images
-                poppler_path = r"C:\poppler-24.08.0\Library\bin"
-                images = convert_from_path(file_path, dpi=300, fmt='jpeg', poppler_path=poppler_path)
+                poppler_path = get_poppler_path()
+                if poppler_path:
+                    images = convert_from_path(file_path, dpi=300, fmt='jpeg', poppler_path=poppler_path)
+                else:
+                    images = convert_from_path(file_path, dpi=300, fmt='jpeg')
                 image_paths = []
                 
                 for i, image in enumerate(images):
