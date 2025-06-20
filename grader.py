@@ -13,7 +13,6 @@ import zipfile
 import shutil
 from fpdf import FPDF
 import re
-import enchant
 import logging
 import tempfile
 import fitz  # PyMuPDF for text percentage detection
@@ -61,7 +60,15 @@ class PDFReport(FPDF):
         self.cell(120, 8, title, 0, 0, 'L')
         self.cell(0, 8, f"{score}%", 0, 1, 'R')
 
+
 class ScoreWiseGrader:
+    # Save the word list (one word per line) as english_words.txt in your project directory
+    def load_word_set(filepath="words.txt"):
+        with open(filepath, "r") as f:
+            return set(word.strip().lower() for word in f if word.strip())
+
+    COMMON_ENGLISH_WORDS = load_word_set()
+
     def __init__(self):
         self.api_key = PERPLEXITY_API_KEY
         self.api_url = "https://api.perplexity.ai/chat/completions"
@@ -311,13 +318,13 @@ class ScoreWiseGrader:
 
     def _calculate_valid_word_ratio(self, text: str) -> float:
         """
-        Returns the ratio of valid English words to total words in the text.
+        Returns the ratio of valid English words to total words in the text,
+        using a fast set lookup (cloud-friendly, no dependencies).
         """
-        d = enchant.Dict("en_US")
         words = re.findall(r'\b[a-zA-Z]{2,}\b', text)
         if not words:
             return 0.0
-        valid = sum(1 for w in words if d.check(w))
+        valid = sum(1 for w in words if w.lower() in COMMON_ENGLISH_WORDS)
         return valid / len(words)
 
     def _calculate_garbled_ratio(self, text: str) -> float:
