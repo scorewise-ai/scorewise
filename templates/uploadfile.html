@@ -3,395 +3,340 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Upload Assignment - ScoreWise AI</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css">
+    <title>ScoreWise AI - Upload Assignment</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
     <style>
-        body { font-family: 'Inter', sans-serif; }
-        .gradient-bg { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
-        .file-drop-zone {
-            border: 2px dashed #d1d5db;
-            transition: all 0.3s ease;
+        .file-upload {
+            border: 2px dashed #dee2e6;
+            border-radius: 10px;
+            padding: 2rem;
+            text-align: center;
+            background-color: #f8f9fa;
+            cursor: pointer;
+            transition: all 0.3s;
         }
-        .file-drop-zone:hover, .file-drop-zone.dragover {
-            border-color: #667eea;
-            background-color: #f8fafc;
+        .file-upload:hover {
+            background-color: #e9ecef;
+            border-color: #adb5bd;
         }
-        .progress-bar {
-            transition: width 0.3s ease;
+        .file-upload.dragover {
+            background-color: #e7f4ff;
+            border-color: #0d6efd;
+        }
+        .file-list {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .subject-optgroup {
+            font-weight: 600;
+            font-style: italic;
         }
     </style>
 </head>
-<body class="min-h-screen bg-gray-50">
-    <!-- Navigation -->
-    <nav class="bg-white shadow-sm border-b">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex justify-between items-center h-16">
-                <div class="flex items-center space-x-4">
-                    <a href="/" class="text-2xl font-bold text-indigo-600">ScoreWise AI</a>
-                    <span class="text-gray-500">|</span>
-                    <span class="text-gray-600">Assignment Upload</span>
-                </div>
-                <div class="flex items-center space-x-4">
-                    <a href="/dashboard" class="text-gray-600 hover:text-indigo-600">Dashboard</a>
-                    <a href="/pricing" class="text-gray-600 hover:text-indigo-600">Pricing</a>
-                    <button id="logout-btn" class="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600">Logout</button>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-light bg-light">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="/">ScoreWise AI</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item"><a class="nav-link" href="/dashboard">Dashboard</a></li>
+                    <li class="nav-item"><a class="nav-link active" href="/upload">Grade Assignments</a></li>
+                    <li class="nav-item"><a class="nav-link" href="/pricing">Pricing</a></li>
+                </ul>
+                <div class="d-flex">
+                    {% if user %}
+                        <span class="navbar-text me-3">Welcome, {{ user.email }}</span>
+                        <form action="/auth/logout" method="post">
+                            <button type="submit" class="btn btn-outline-primary">Logout</button>
+                        </form>
+                    {% else %}
+                        <a href="/" class="btn btn-outline-primary">Login</a>
+                    {% endif %}
                 </div>
             </div>
         </div>
     </nav>
 
-    <!-- Main Content -->
-    <div class="max-w-4xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
-        <div class="bg-white rounded-lg shadow-lg p-8">
-            <div class="text-center mb-8">
-                <h1 class="text-3xl font-bold text-gray-900 mb-2">Upload Assignment for AI Grading</h1>
-                <p class="text-gray-600">Upload your assignment and student submissions for AI-powered grading</p>
+    <div class="container my-5">
+        <div class="row justify-content-center">
+            <div class="col-lg-8">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-white">
+                        <h3 class="mb-0">Upload your assignment and student submissions</h3>
+                    </div>
+                    <div class="card-body">
+                        <form id="uploadForm" action="/api/upload" method="post" enctype="multipart/form-data">
+                            <!-- Subject Selection -->
+                            <div class="mb-4">
+                                <label for="subject" class="form-label">Subject *</label>
+                                <select id="subject" name="subject" class="form-select" required>
+                                    <optgroup label="STEM Subjects" class="subject-optgroup">
+                                        <option value="algebra">Algebra</option>
+                                        <option value="biology">Biology</option>
+                                        <option value="calculus">Calculus</option>
+                                        <option value="chemistry">Chemistry</option>
+                                        <option value="engineering">Engineering</option>
+                                        <option value="physics">Physics</option>
+                                    </optgroup>
+                                    <optgroup label="Humanities" class="subject-optgroup">
+                                        <option value="english_literature">English Literature</option>
+                                        <option value="history">History</option>
+                                        <option value="philosophy">Philosophy</option>
+                                        <option value="creative_writing">Creative Writing</option>
+                                    </optgroup>
+                                    <optgroup label="Social Sciences" class="subject-optgroup">
+                                        <option value="psychology">Psychology</option>
+                                        <option value="economics">Economics</option>
+                                        <option value="sociology">Sociology</option>
+                                        <option value="political_science">Political Science</option>
+                                    </optgroup>
+                                    <optgroup label="Arts" class="subject-optgroup">
+                                        <option value="music_theory">Music Theory</option>
+                                        <option value="art_history">Art History</option>
+                                        <option value="creative_arts">Creative Arts</option>
+                                        <option value="drama">Drama</option>
+                                    </optgroup>
+                                    <optgroup label="Language Arts" class="subject-optgroup">
+                                        <option value="spanish">Spanish</option>
+                                        <option value="french">French</option>
+                                        <option value="german">German</option>
+                                        <option value="chinese">Chinese</option>
+                                        <option value="japanese">Japanese</option>
+                                    </optgroup>
+                                </select>
+                            </div>
+                            
+                            <!-- Assessment Type Selection -->
+                            <div class="mb-4">
+                                <label for="assessment_type" class="form-label">Assessment Type *</label>
+                                <select id="assessment_type" name="assessment_type" class="form-select" required>
+                                    <option value="essay">Essay</option>
+                                    <option value="lab_report">Lab Report</option>
+                                    <option value="exam">Exam</option>
+                                    <option value="quiz">Quiz</option>
+                                    <option value="assignment">Assignment</option>
+                                    <option value="creative_work">Creative Work</option>
+                                    <option value="research_paper">Research Paper</option>
+                                    <option value="case_study">Case Study</option>
+                                </select>
+                            </div>
+                            
+                            <!-- Assignment File -->
+                            <div class="mb-4">
+                                <label for="assignment_file" class="form-label">Assignment Instructions (PDF) *</label>
+                                <div class="file-upload" id="assignmentUploadArea">
+                                    <i class="bi bi-cloud-arrow-up fs-1 text-primary"></i>
+                                    <p class="mt-2 mb-1">Click to upload or drag and drop</p>
+                                    <p class="small text-muted mb-0">PDF files only (Max 10MB)</p>
+                                    <input type="file" class="d-none" id="assignment_file" name="assignment_file" accept=".pdf" required>
+                                </div>
+                                <div id="assignmentFileName" class="mt-2 small fw-bold"></div>
+                            </div>
+                            
+                            <!-- Student Submissions -->
+                            <div class="mb-4">
+                                <label for="student_submissions" class="form-label">Student Submissions (PDF) *</label>
+                                <div class="file-upload" id="submissionsUploadArea">
+                                    <i class="bi bi-cloud-arrow-up fs-1 text-primary"></i>
+                                    <p class="mt-2 mb-1">Click to upload or drag and drop</p>
+                                    <p class="small text-muted mb-0">PDF files only, multiple files allowed (Max 10MB each)</p>
+                                    <input type="file" class="d-none" id="student_submissions" name="student_submissions" accept=".pdf" multiple required>
+                                </div>
+                                <div id="submissionsFileList" class="file-list mt-2"></div>
+                            </div>
+                            
+                            <!-- Solution File (Optional) -->
+                            <div class="mb-4">
+                                <label for="solution_file" class="form-label">Solution Key (PDF) - Optional</label>
+                                <div class="file-upload" id="solutionUploadArea">
+                                    <i class="bi bi-cloud-arrow-up fs-1 text-secondary"></i>
+                                    <p class="mt-2 mb-1">Click to upload or drag and drop</p>
+                                    <p class="small text-muted mb-0">PDF file only (Max 10MB)</p>
+                                    <input type="file" class="d-none" id="solution_file" name="solution_file" accept=".pdf">
+                                </div>
+                                <div id="solutionFileName" class="mt-2 small fw-bold"></div>
+                            </div>
+                            
+                            <!-- Custom Rubric (Optional) -->
+                            <div class="mb-4">
+                                <label for="custom_rubric" class="form-label">Custom Rubric (PDF) - Optional</label>
+                                <div class="file-upload" id="rubricUploadArea">
+                                    <i class="bi bi-cloud-arrow-up fs-1 text-secondary"></i>
+                                    <p class="mt-2 mb-1">Click to upload or drag and drop</p>
+                                    <p class="small text-muted mb-0">PDF file only (Max 10MB)</p>
+                                    <input type="file" class="d-none" id="custom_rubric" name="custom_rubric" accept=".pdf">
+                                </div>
+                                <div id="rubricFileName" class="mt-2 small fw-bold"></div>
+                            </div>
+                            
+                            <div class="d-grid">
+                                <button type="submit" class="btn btn-primary btn-lg" id="submitBtn">
+                                    <i class="bi bi-lightning-charge"></i> Grade Submissions
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
             </div>
-
-            <form id="upload-form" class="space-y-8">
-                <!-- Subject Selection -->
-                <div>
-                    <label for="subject" class="block text-sm font-medium text-gray-700 mb-2">
-                        Select Subject <span class="text-red-500">*</span>
-                    </label>
-                    <select id="subject" name="subject" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
-                        <option value="">Choose a subject...</option>
-                        <option value="mathematics">Mathematics</option>
-                        <option value="science">Science</option>
-                        <option value="english">English/Language Arts</option>
-                        <option value="history">History/Social Studies</option>
-                        <option value="computer_science">Computer Science</option>
-                        <option value="chemistry">Chemistry</option>
-                        <option value="physics">Physics</option>
-                        <option value="biology">Biology</option>
-                        <option value="economics">Economics</option>
-                        <option value="psychology">Psychology</option>
-                        <option value="other">Other</option>
-                    </select>
-                </div>
-
-                <!-- Assignment Type -->
-                <div>
-                    <label for="assignment_type" class="block text-sm font-medium text-gray-700 mb-2">
-                        Assignment Type <span class="text-red-500">*</span>
-                    </label>
-                    <select id="assignment_type" name="assignment_type" required class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
-                        <option value="">Choose assignment type...</option>
-                        <option value="essay">Essay</option>
-                        <option value="homework">Homework</option>
-                        <option value="quiz">Quiz</option>
-                        <option value="exam">Exam</option>
-                        <option value="project">Project</option>
-                        <option value="lab_report">Lab Report</option>
-                        <option value="research_paper">Research Paper</option>
-                        <option value="problem_set">Problem Set</option>
-                    </select>
-                </div>
-
-                <!-- Assignment Upload (Required) -->
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">
-                        Assignment PDF <span class="text-red-500">*</span>
-                    </label>
-                    <div class="file-drop-zone border-2 border-dashed border-gray-300 rounded-lg p-6 text-center bg-gray-50" id="assignment-drop-zone">
-                        <input type="file" id="assignment-file" name="assignment_file" accept=".pdf" required class="hidden">
-                        <div class="space-y-2">
-                            <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
-                                <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                            </svg>
-                            <p class="text-gray-600">Click to upload or drag and drop</p>
-                            <p class="text-sm text-gray-500">PDF files only (Max 10MB)</p>
-                        </div>
-                        <div id="assignment-file-info" class="mt-4 hidden">
-                            <p class="text-sm text-green-600 font-medium" id="assignment-file-name"></p>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Student Submissions Upload (Required) -->
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">
-                        Student Submissions <span class="text-red-500">*</span>
-                    </label>
-                    <div class="file-drop-zone border-2 border-dashed border-gray-300 rounded-lg p-6 text-center bg-gray-50" id="submissions-drop-zone">
-                        <input type="file" id="submissions-file" name="submissions_file" accept=".pdf" multiple required class="hidden">
-                        <div class="space-y-2">
-                            <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
-                                <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                            </svg>
-                            <p class="text-gray-600">Click to upload or drag and drop</p>
-                            <p class="text-sm text-gray-500">PDF files only, multiple files allowed (Max 10MB each)</p>
-                        </div>
-                        <div id="submissions-file-info" class="mt-4 hidden">
-                            <p class="text-sm text-green-600 font-medium" id="submissions-file-list"></p>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Solution Set Upload (Optional) -->
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">
-                        Instructor Solution Set <span class="text-gray-500">(Optional)</span>
-                    </label>
-                    <div class="file-drop-zone border-2 border-dashed border-gray-300 rounded-lg p-6 text-center bg-gray-50" id="solution-drop-zone">
-                        <input type="file" id="solution-file" name="solution_file" accept=".pdf" class="hidden">
-                        <div class="space-y-2">
-                            <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
-                                <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                            </svg>
-                            <p class="text-gray-600">Click to upload or drag and drop</p>
-                            <p class="text-sm text-gray-500">PDF file only (Max 10MB)</p>
-                        </div>
-                        <div id="solution-file-info" class="mt-4 hidden">
-                            <p class="text-sm text-green-600 font-medium" id="solution-file-name"></p>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Custom Rubric Upload (Optional) -->
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">
-                        Custom Rubric <span class="text-gray-500">(Optional - overrides default rubric)</span>
-                    </label>
-                    <div class="file-drop-zone border-2 border-dashed border-gray-300 rounded-lg p-6 text-center bg-gray-50" id="rubric-drop-zone">
-                        <input type="file" id="rubric-file" name="rubric_file" accept=".pdf" class="hidden">
-                        <div class="space-y-2">
-                            <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
-                                <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                            </svg>
-                            <p class="text-gray-600">Click to upload or drag and drop</p>
-                            <p class="text-sm text-gray-500">PDF file only (Max 10MB)</p>
-                        </div>
-                        <div id="rubric-file-info" class="mt-4 hidden">
-                            <p class="text-sm text-green-600 font-medium" id="rubric-file-name"></p>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Progress Bar -->
-                <div id="progress-container" class="hidden">
-                    <div class="bg-gray-200 rounded-full h-2 mb-4">
-                        <div id="progress-bar" class="progress-bar bg-indigo-600 h-2 rounded-full" style="width: 0%"></div>
-                    </div>
-                    <p id="progress-text" class="text-sm text-gray-600 text-center">Starting upload...</p>
-                </div>
-
-                <!-- Submit Button -->
-                <div class="flex justify-center">
-                    <button type="submit" id="submit-btn" class="px-8 py-3 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed">
-                        Start AI Grading
-                    </button>
-                </div>
-            </form>
         </div>
     </div>
 
+    <footer class="bg-light mt-5 py-4">
+        <div class="container">
+            <div class="row">
+                <div class="col-md-6">
+                    <h5>ScoreWise AI</h5>
+                    <p class="text-muted">AI-powered assignment grading for educators</p>
+                </div>
+                <div class="col-md-6 text-md-end">
+                    <ul class="list-inline mb-0">
+                        <li class="list-inline-item"><a href="/">Home</a></li>
+                        <li class="list-inline-item"><a href="/pricing">Pricing</a></li>
+                        <li class="list-inline-item"><a href="#">Contact</a></li>
+                        <li class="list-inline-item"><a href="#">Privacy Policy</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="row mt-3">
+                <div class="col-12 text-center">
+                    <p class="text-muted small mb-0">&copy; 2025 ScoreWise AI. All rights reserved.</p>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // File upload handling
-        function setupFileUpload(dropZoneId, inputId, fileInfoId, fileNameId, multiple = false) {
-            const dropZone = document.getElementById(dropZoneId);
-            const fileInput = document.getElementById(inputId);
-            const fileInfo = document.getElementById(fileInfoId);
-            const fileName = document.getElementById(fileNameId);
-
-            // Click to upload
-            dropZone.addEventListener('click', () => fileInput.click());
-
-            // Drag and drop
-            dropZone.addEventListener('dragover', (e) => {
+        // Assignment file handling
+        const assignmentUploadArea = document.getElementById('assignmentUploadArea');
+        const assignmentFileInput = document.getElementById('assignment_file');
+        const assignmentFileName = document.getElementById('assignmentFileName');
+    
+        assignmentUploadArea.addEventListener('click', () => assignmentFileInput.click());
+        assignmentFileInput.addEventListener('change', function() {
+            if (this.files.length > 0) {
+                assignmentFileName.textContent = this.files[0].name;
+            }
+        });
+    
+        // Student submissions handling
+        const submissionsUploadArea = document.getElementById('submissionsUploadArea');
+        const submissionsFileInput = document.getElementById('student_submissions');
+        const submissionsFileList = document.getElementById('submissionsFileList');
+    
+        submissionsUploadArea.addEventListener('click', () => submissionsFileInput.click());
+        submissionsFileInput.addEventListener('change', function() {
+            submissionsFileList.innerHTML = '';
+            if (this.files.length > 0) {
+                for (let i = 0; i < this.files.length; i++) {
+                    const fileItem = document.createElement('div');
+                    fileItem.className = 'd-flex justify-content-between align-items-center mb-1';
+                    fileItem.innerHTML = `
+                        <div>${this.files[i].name}</div>
+                        <div class="text-success">Ready</div>
+                    `;
+                    submissionsFileList.appendChild(fileItem);
+                }
+            }
+        });
+    
+        // Solution file handling
+        const solutionUploadArea = document.getElementById('solutionUploadArea');
+        const solutionFileInput = document.getElementById('solution_file');
+        const solutionFileName = document.getElementById('solutionFileName');
+    
+        solutionUploadArea.addEventListener('click', () => solutionFileInput.click());
+        solutionFileInput.addEventListener('change', function() {
+            if (this.files.length > 0) {
+                solutionFileName.textContent = this.files[0].name;
+            }
+        });
+    
+        // Rubric file handling
+        const rubricUploadArea = document.getElementById('rubricUploadArea');
+        const rubricFileInput = document.getElementById('custom_rubric');
+        const rubricFileName = document.getElementById('rubricFileName');
+    
+        rubricUploadArea.addEventListener('click', () => rubricFileInput.click());
+        rubricFileInput.addEventListener('change', function() {
+            if (this.files.length > 0) {
+                rubricFileName.textContent = this.files[0].name;
+            }
+        });
+    
+        // Improved drag and drop functionality
+        function setupDragDrop(uploadArea, fileInput) {
+            uploadArea.addEventListener('dragover', (e) => {
                 e.preventDefault();
-                dropZone.classList.add('dragover');
+                uploadArea.classList.add('dragover');
             });
-
-            dropZone.addEventListener('dragleave', () => {
-                dropZone.classList.remove('dragover');
+        
+            uploadArea.addEventListener('dragleave', () => {
+                uploadArea.classList.remove('dragover');
             });
-
-            dropZone.addEventListener('drop', (e) => {
+        
+            uploadArea.addEventListener('drop', (e) => {
                 e.preventDefault();
-                dropZone.classList.remove('dragover');
-                
-                const files = Array.from(e.dataTransfer.files);
-                const pdfFiles = files.filter(file => file.type === 'application/pdf');
-                
-                if (pdfFiles.length !== files.length) {
-                    alert('Only PDF files are allowed!');
-                    return;
-                }
-
-                if (!multiple && pdfFiles.length > 1) {
-                    alert('Only one file allowed for this field!');
-                    return;
-                }
-
-                // Check file size (10MB limit)
-                const maxSize = 10 * 1024 * 1024; // 10MB
-                const oversizedFiles = pdfFiles.filter(file => file.size > maxSize);
-                if (oversizedFiles.length > 0) {
-                    alert('Some files exceed the 10MB limit!');
-                    return;
-                }
-
-                // Create FileList object
-                const dataTransfer = new DataTransfer();
-                pdfFiles.forEach(file => dataTransfer.items.add(file));
-                fileInput.files = dataTransfer.files;
-
-                // Show file info
-                showFileInfo(pdfFiles, fileInfo, fileName, multiple);
-            });
-
-            // File input change
-            fileInput.addEventListener('change', (e) => {
-                const files = Array.from(e.target.files);
-                showFileInfo(files, fileInfo, fileName, multiple);
-            });
-        }
-
-        function showFileInfo(files, fileInfo, fileName, multiple) {
-            if (files.length > 0) {
-                fileInfo.classList.remove('hidden');
-                if (multiple) {
-                    fileName.textContent = `${files.length} file(s) selected: ${files.map(f => f.name).join(', ')}`;
-                } else {
-                    fileName.textContent = files[0].name;
-                }
-            } else {
-                fileInfo.classList.add('hidden');
-            }
-        }
-
-        // Validate PDF files
-        function validatePDFFile(file) {
-            return file.type === 'application/pdf';
-        }
-
-        // Setup all file uploads
-        setupFileUpload('assignment-drop-zone', 'assignment-file', 'assignment-file-info', 'assignment-file-name');
-        setupFileUpload('submissions-drop-zone', 'submissions-file', 'submissions-file-info', 'submissions-file-list', true);
-        setupFileUpload('solution-drop-zone', 'solution-file', 'solution-file-info', 'solution-file-name');
-        setupFileUpload('rubric-drop-zone', 'rubric-file', 'rubric-file-info', 'rubric-file-name');
-
-        // Form submission
-        document.getElementById('upload-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
+                uploadArea.classList.remove('dragover');
             
-            const submitBtn = document.getElementById('submit-btn');
-            const progressContainer = document.getElementById('progress-container');
-            const progressBar = document.getElementById('progress-bar');
-            const progressText = document.getElementById('progress-text');
-
-            // Validate required fields
-            const subject = document.getElementById('subject').value;
-            const assignmentType = document.getElementById('assignment_type').value;
-            const assignmentFile = document.getElementById('assignment-file').files[0];
-            const submissionsFiles = document.getElementById('submissions-file').files;
-
-            if (!subject || !assignmentType || !assignmentFile || submissionsFiles.length === 0) {
-                alert('Please fill in all required fields and upload the required files.');
-                return;
-            }
-
-            // Disable submit button and show progress
-            submitBtn.disabled = true;
-            submitBtn.textContent = 'Processing...';
-            progressContainer.classList.remove('hidden');
-
-            // Create FormData
-            const formData = new FormData();
-            formData.append('subject', subject);
-            formData.append('assignment_type', assignmentType);
-            formData.append('assignment_file', assignmentFile);
-            
-            // Add all submission files
-            for (let i = 0; i < submissionsFiles.length; i++) {
-                formData.append('submissions_files', submissionsFiles[i]);
-            }
-
-            // Add optional files if present
-            const solutionFile = document.getElementById('solution-file').files[0];
-            if (solutionFile) {
-                formData.append('solution_file', solutionFile);
-            }
-
-            const rubricFile = document.getElementById('rubric-file').files[0];
-            if (rubricFile) {
-                formData.append('rubric_file', rubricFile);
-            }
-
-            try {
-                // Upload files
-                progressText.textContent = 'Uploading files...';
-                progressBar.style.width = '30%';
-
-                const response = await fetch('/api/upload-assignment', {
-                    method: 'POST',
-                    body: formData
-                });
-
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-
-                const result = await response.json();
+                if (e.dataTransfer.files.length > 0) {
+                    // Create a new DataTransfer object to properly set files
+                    const dataTransfer = new DataTransfer();
                 
-                if (result.success) {
-                    progressText.textContent = 'Starting AI grading...';
-                    progressBar.style.width = '60%';
-
-                    // Start grading process
-                    const gradingResponse = await fetch('/api/start-grading', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            task_id: result.task_id
-                        })
-                    });
-
-                    if (gradingResponse.ok) {
-                        progressText.textContent = 'Grading completed! Redirecting to dashboard...';
-                        progressBar.style.width = '100%';
-                        
-                        setTimeout(() => {
-                            window.location.href = `/dashboard?task_id=${result.task_id}`;
-                        }, 2000);
-                    } else {
-                        throw new Error('Failed to start grading process');
+                    // Add files to the DataTransfer object, filtering for PDFs
+                    for (let i = 0; i < e.dataTransfer.files.length; i++) {
+                        const file = e.dataTransfer.files[i];
+                        if (file.name.toLowerCase().endsWith('.pdf')) {
+                            dataTransfer.items.add(file);
+                        }
                     }
-                } else {
-                    throw new Error(result.message || 'Upload failed');
-                }
-            } catch (error) {
-                console.error('Error:', error);
-                alert('An error occurred during upload. Please try again.');
                 
-                // Reset form
-                submitBtn.disabled = false;
-                submitBtn.textContent = 'Start AI Grading';
-                progressContainer.classList.add('hidden');
-                progressBar.style.width = '0%';
+                    // Set the files on the input element
+                    fileInput.files = dataTransfer.files;
+                
+                    // Trigger change event
+                    const event = new Event('change', { bubbles: true });
+                    fileInput.dispatchEvent(event);
+                }
+            });
+        }
+    
+        setupDragDrop(assignmentUploadArea, assignmentFileInput);
+        setupDragDrop(submissionsUploadArea, submissionsFileInput);
+        setupDragDrop(solutionUploadArea, solutionFileInput);
+        setupDragDrop(rubricUploadArea, rubricFileInput);
+    
+        // Enhanced form submission with validation
+        document.getElementById('uploadForm').addEventListener('submit', function(e) {
+            // Check if required files are selected
+            const assignmentFile = document.getElementById('assignment_file').files;
+            const studentSubmissions = document.getElementById('student_submissions').files;
+    
+            if (assignmentFile.length === 0) {
+                e.preventDefault();
+                alert('Please select an assignment instructions file.');
+                return false;
             }
+    
+            if (studentSubmissions.length === 0) {
+                e.preventDefault();
+                alert('Please select at least one student submission file.');
+                return false;
+            }
+    
+            // If files are selected, show loading state but DON'T prevent default
+            const submitBtn = document.getElementById('submitBtn');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span> Processing...';
+    
+            // Allow the form to submit naturally 
         });
 
-        // Logout functionality
-        document.getElementById('logout-btn').addEventListener('click', async () => {
-            try {
-                const response = await fetch('/api/logout', {
-                    method: 'POST'
-                });
-                if (response.ok) {
-                    window.location.href = '/';
-                }
-            } catch (error) {
-                console.error('Logout error:', error);
-                window.location.href = '/';
-            }
-        });
     </script>
-    <script src="/static/app.js"></script>
 </body>
 </html>
+

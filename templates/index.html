@@ -41,6 +41,9 @@
                             <button type="submit" class="text-gray-700 hover:text-primary transition-colors">Logout</button>
                         </form>
                     {% else %}
+                        <a href="/register" class="bg-secondary text-white px-4 py-2 rounded-lg hover:bg-secondary/90 transition-colors">
+                            Register
+                        </a>
                         <button onclick="showLoginModal()" class="bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors">
                             Sign In
                         </button>
@@ -70,8 +73,11 @@
                         View Dashboard
                     </a>
                 {% else %}
-                    <button onclick="showLoginModal()" class="bg-primary text-white px-8 py-3 rounded-lg font-semibold hover:bg-primary/90 transition-colors">
-                        Get Started
+                    <a href="/register" class="bg-primary text-white px-8 py-3 rounded-lg font-semibold hover:bg-primary/90 transition-colors">
+                        Get Started Free
+                    </a>
+                    <button onclick="showLoginModal()" class="border border-primary text-primary px-8 py-3 rounded-lg font-semibold hover:bg-primary/5 transition-colors">
+                        Sign In
                     </button>
                     <a href="/pricing" class="border border-primary text-primary px-8 py-3 rounded-lg font-semibold hover:bg-primary/5 transition-colors">
                         View Pricing
@@ -131,9 +137,9 @@
                     Start Grading Now
                 </a>
             {% else %}
-                <button onclick="showLoginModal()" class="bg-white text-primary px-8 py-3 rounded-lg font-semibold hover:bg-gray-50 transition-colors">
-                    Get Started Today
-                </button>
+                <a href="/register" class="bg-white text-primary px-8 py-3 rounded-lg font-semibold hover:bg-gray-50 transition-colors">
+                    Get Started Free
+                </a>
             {% endif %}
         </div>
     </section>
@@ -170,7 +176,8 @@
             </form>
             
             <p class="text-center text-sm text-gray-600 mt-4">
-                Don't have an account? Start with our free trial!
+                Don't have an account?
+                <a href="/register" class="text-primary font-semibold hover:underline">Register here</a>
             </p>
         </div>
     </div>
@@ -235,3 +242,4 @@
     </script>
 </body>
 </html>
+

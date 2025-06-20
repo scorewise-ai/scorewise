@@ -1,4 +1,5 @@
-# ScoreWise AI - Main FastAPI Application
+# ScoreWise AI - Main FastAPI Application - FINAL VERSION
+
 import os
 import json
 import uuid
@@ -9,6 +10,7 @@ from pathlib import Path
 from typing import Optional, List, Dict, Union, Any
 import aiofiles
 import hashlib
+
 from fastapi import FastAPI, Request, Response, HTTPException, Depends, Form, File, UploadFile, BackgroundTasks
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, FileResponse
 from fastapi.templating import Jinja2Templates
@@ -19,6 +21,7 @@ import stripe
 import requests
 from pydantic import BaseModel
 import uvicorn
+
 from db import SessionLocal, Base, engine
 from sqlalchemy import Column, String, DateTime
 from sqlalchemy.orm import Session
@@ -57,7 +60,7 @@ os.makedirs("static", exist_ok=True)
 os.makedirs("templates", exist_ok=True)
 
 # FastAPI app
-app = FastAPI(title="ScoreWise AI", description="AI-Powered Assignment Grading Platform")
+app = FastAPI(title="ScoreWise AI", description="AI-Powered STEM Assignment Grading Platform")
 
 # Middleware
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
@@ -77,7 +80,6 @@ templates = Jinja2Templates(directory="templates")
 class GradingTask(BaseModel):
     task_id: str
     subject: str
-    assessment_type: str
     status: str = "processing"
     created_at: datetime
     user_id: str
@@ -99,24 +101,8 @@ Base.metadata.create_all(bind=engine)
 # In-memory storage for tasks
 tasks_storage: Dict[str, GradingTask] = {}
 
-# Subjects list for validation
-VALID_SUBJECTS = [
-    # STEM subjects
-    "algebra", "biology", "calculus", "chemistry", "engineering", "physics",
-    # Humanities
-    "english_literature", "history", "philosophy", "creative_writing",
-    # Social Sciences
-    "psychology", "economics", "sociology", "political_science",
-    # Arts
-    "music_theory", "art_history", "creative_arts", "drama",
-    # Language Arts
-    "spanish", "french", "german", "chinese", "japanese"
-]
-
-VALID_ASSESSMENT_TYPES = [
-    "essay", "lab_report", "exam", "quiz", "assignment",
-    "creative_work", "research_paper", "case_study"
-]
+# STEM subjects list for validation
+VALID_STEM_SUBJECTS = ["algebra", "biology", "calculus", "chemistry", "engineering", "physics"]
 
 # Utility functions
 def get_current_user(request: Request) -> Optional[Dict]:
@@ -188,13 +174,14 @@ async def upload_page(request: Request):
     user = require_auth(request)
     if isinstance(user, RedirectResponse):
         return user
+    
     if not has_active_subscription(user):
         return RedirectResponse(url="/pricing", status_code=303)
+    
     return templates.TemplateResponse("uploadfile.html", {
         "request": request,
         "user": user,
-        "valid_subjects": VALID_SUBJECTS,
-        "valid_assessment_types": VALID_ASSESSMENT_TYPES
+        "valid_subjects": VALID_STEM_SUBJECTS
     })
 
 @app.get("/dashboard", response_class=HTMLResponse)
@@ -202,6 +189,7 @@ async def dashboard(request: Request):
     user = require_auth(request)
     if isinstance(user, RedirectResponse):
         return user
+    
     if not has_active_subscription(user):
         return RedirectResponse(url="/pricing", status_code=303)
     
@@ -222,7 +210,6 @@ async def upload_files(
     request: Request,
     background_tasks: BackgroundTasks,
     subject: str = Form(...),
-    assessment_type: str = Form(...),
     assignment_file: UploadFile = File(...),
     student_submissions: List[UploadFile] = File(...),
     solution_file: Optional[UploadFile] = File(None),
@@ -232,56 +219,31 @@ async def upload_files(
         user = require_auth(request)
         if isinstance(user, RedirectResponse):
             raise HTTPException(status_code=401, detail="Authentication required")
+        
         if not has_active_subscription(user):
             raise HTTPException(status_code=402, detail="Active subscription required")
         
-        # Validate subject
-        if subject not in VALID_SUBJECTS:
-            raise HTTPException(status_code=400, 
-                detail=f"Invalid subject. Must be one of: {', '.join(VALID_SUBJECTS)}")
+        # Validate STEM subject
+        if subject not in VALID_STEM_SUBJECTS:
+            raise HTTPException(status_code=400, detail=f"Invalid subject. Must be one of: {', '.join(VALID_STEM_SUBJECTS)}")
         
-        # Validate assessment type
-        if assessment_type not in VALID_ASSESSMENT_TYPES:
-            raise HTTPException(status_code=400,
-                detail=f"Invalid assessment type. Must be one of: {', '.join(VALID_ASSESSMENT_TYPES)}")
-        
-        # Enhanced file validation
-        # Check assignment file
-        if not assignment_file or not hasattr(assignment_file, 'filename') or not assignment_file.filename:
-            raise HTTPException(status_code=400, detail="Please select an assignment instructions file")
-            
-        # Check student submissions
-        if not student_submissions or len(student_submissions) == 0:
-            raise HTTPException(status_code=400, detail="Please select at least one student submission")
-            
-        # Validate that the first submission has a filename
-        if not hasattr(student_submissions[0], 'filename') or not student_submissions[0].filename:
-            raise HTTPException(status_code=400, detail="Please select valid student submission files")
-            
-        # Create all_files list with only valid files
-        all_files = [assignment_file]
-        
-        # Add valid student submissions
-        for submission in student_submissions:
-            if hasattr(submission, 'filename') and submission.filename:
-                all_files.append(submission)
-        
-        # Add optional files if they have valid filenames
-        if solution_file and hasattr(solution_file, 'filename') and solution_file.filename:
+        # Validate files
+        all_files = [assignment_file] + student_submissions
+        if solution_file:
             all_files.append(solution_file)
-        if custom_rubric and hasattr(custom_rubric, 'filename') and custom_rubric.filename:
+        if custom_rubric:
             all_files.append(custom_rubric)
-        
-        # Validate each file
+
         for file in all_files:
-            # Check file extension
+            if not file.filename:
+                raise HTTPException(status_code=400, detail="Please select files to upload")
+            
             if not file.filename.lower().endswith('.pdf'):
                 raise HTTPException(status_code=400, detail=f"Only PDF files allowed. '{file.filename}' is not a PDF")
             
-            # Check file size (if size attribute is available)
-            if hasattr(file, 'size') and file.size and file.size > 10 * 1024 * 1024:
+            if file.size and file.size > 10 * 1024 * 1024:
                 raise HTTPException(status_code=400, detail=f"File '{file.filename}' exceeds 10MB limit")
-        
+
         # Create task
         task_id = str(uuid.uuid4())
         task_dir = Path(f"uploads/{task_id}")
@@ -296,46 +258,46 @@ async def upload_files(
             content = await assignment_file.read()
             await f.write(content)
         saved_files["assignment"] = str(assignment_path)
-        
+
         # Save student submissions
         submissions_dir = task_dir / "submissions"
         submissions_dir.mkdir(exist_ok=True)
         submission_paths = []
-        for i, submission in enumerate(student_submissions):
-            if hasattr(submission, 'filename') and submission.filename:
-                submission_path = submissions_dir / f"submission_{i+1}_{submission.filename}"
-                async with aiofiles.open(submission_path, "wb") as f:
-                    content = await submission.read()
-                    await f.write(content)
-                submission_paths.append(str(submission_path))
-        saved_files["submissions"] = submission_paths
         
+        for i, submission in enumerate(student_submissions):
+            submission_path = submissions_dir / f"submission_{i+1}_{submission.filename}"
+            async with aiofiles.open(submission_path, "wb") as f:
+                content = await submission.read()
+                await f.write(content)
+            submission_paths.append(str(submission_path))
+        
+        saved_files["submissions"] = submission_paths
+
         # Save optional files
-        if solution_file and hasattr(solution_file, 'filename') and solution_file.filename:
+        if solution_file:
             solution_path = task_dir / f"solution_{solution_file.filename}"
             async with aiofiles.open(solution_path, "wb") as f:
                 content = await solution_file.read()
                 await f.write(content)
             saved_files["solution"] = str(solution_path)
-        
-        if custom_rubric and hasattr(custom_rubric, 'filename') and custom_rubric.filename:
+
+        if custom_rubric:
             rubric_path = task_dir / f"rubric_{custom_rubric.filename}"
             async with aiofiles.open(rubric_path, "wb") as f:
                 content = await custom_rubric.read()
                 await f.write(content)
             saved_files["rubric"] = str(rubric_path)
-        
+
         # Create task record
         task_data = {
             "task_id": task_id,
             "subject": subject,
-            "assessment_type": assessment_type,
             "status": "processing",
             "created_at": datetime.now().isoformat(),
             "user_id": user.get("id"),
             "files": saved_files
         }
-        
+
         # Save task metadata
         await save_task_metadata(task_id, task_data)
         
@@ -343,7 +305,6 @@ async def upload_files(
         grading_task = GradingTask(
             task_id=task_id,
             subject=subject,
-            assessment_type=assessment_type,
             status="processing",
             created_at=datetime.now(),
             user_id=user.get("id"),
@@ -353,17 +314,12 @@ async def upload_files(
         
         # Start grading process in background
         background_tasks.add_task(process_grading_task, task_id)
-        
-        # FIXED: Redirect to dashboard with success message instead of returning JSON
-        return RedirectResponse(
-            url=f"/dashboard?task_id={task_id}&status=upload_success", 
-            status_code=303  
-        )
-        
+
+        return {"task_id": task_id, "status": "processing", "message": "Upload successful, grading started"}
+
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Upload error: {str(e)}")
         raise HTTPException(status_code=500, detail="Upload failed. Please try again.")
 
 async def process_grading_task(task_id: str):
@@ -385,10 +341,11 @@ async def process_grading_task(task_id: str):
         task_data["status"] = results.get("status", "completed")
         task_data["results"] = results
         await save_task_metadata(task_id, task_data)
-        
+
         if task_id in tasks_storage:
             tasks_storage[task_id].status = results.get("status", "completed")
             tasks_storage[task_id].results = results
+        
     except Exception as e:
         # Handle errors
         try:
@@ -397,8 +354,8 @@ async def process_grading_task(task_id: str):
                 task_data["status"] = "error"
                 task_data["error"] = str(e)
                 await save_task_metadata(task_id, task_data)
-            
-            if task_id in tasks_storage:
+
+            if task_id in tasks极orage:
                 tasks_storage[task_id].status = "error"
                 tasks_storage[task_id].error = str(e)
         except:
@@ -414,6 +371,7 @@ async def download_reports(task_id: str, request: Request, background_tasks: Bac
     task_data = await load_task_metadata(task_id)
     if not task_data:
         raise HTTPException(status_code=404, detail="Task not found")
+    
     if task_data.get("user_id") != user.get("id"):
         raise HTTPException(status_code=403, detail="Access denied")
     
@@ -431,6 +389,7 @@ async def download_reports(task_id: str, request: Request, background_tasks: Bac
             print(f"✗ Error cleaning up uploads/{task_id}: {e}")
     
     background_tasks.add_task(cleanup)
+    
     return FileResponse(zip_path, filename=f"reports_{task_id}.zip")
 
 @app.get("/api/task/{task_id}")
@@ -438,29 +397,30 @@ async def get_task_status(task_id: str, request: Request):
     user = require_auth(request)
     if isinstance(user, RedirectResponse):
         raise HTTPException(status_code=401, detail="Authentication required")
-    
+
     task_data = await load_task_metadata(task_id)
     if not task_data:
         raise HTTPException(status_code=404, detail="Task not found")
-    
+
     # Check if user owns this task
     if task_data.get("user_id") != user.get("id"):
         raise HTTPException(status_code=403, detail="Access denied")
-    
+
     return task_data
 
 @app.post("/api/create-checkout-session")
 async def create_checkout_session(request: Request, plan: str = Form(...)):
     user = get_current_user(request)
+    
     price_ids = {
         "standard": PRICE_ID_STANDARD,
         "pro": PRICE_ID_PRO,
         "enterprise": PRICE_ID_ENTERPRISE
     }
-    
+
     if plan not in price_ids:
         raise HTTPException(status_code=400, detail="Invalid plan")
-    
+
     try:
         session = stripe.checkout.Session.create(
             payment_method_types=["card"],
@@ -473,6 +433,7 @@ async def create_checkout_session(request: Request, plan: str = Form(...)):
             cancel_url=request.url_for("pricing"),
             client_reference_id=user.get("id") if user else None,
         )
+
         return {"checkout_url": session.url}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -488,7 +449,7 @@ async def success(request: Request, session_id: Optional[str] = None):
 async def stripe_webhook(request: Request):
     payload = await request.body()
     sig_header = request.headers.get("stripe-signature")
-    
+
     try:
         event = stripe.Webhook.construct_event(
             payload, sig_header, STRIPE_WEBHOOK_SECRET
@@ -497,14 +458,14 @@ async def stripe_webhook(request: Request):
         raise HTTPException(status_code=400, detail="Invalid payload")
     except stripe.error.SignatureVerificationError:
         raise HTTPException(status_code=400, detail="Invalid signature")
-    
+
     # Handle the event
     if event["type"] == "checkout.session.completed":
         session = event["data"]["object"]
         # Update user subscription status
         # Implementation depends on your user management system
         pass
-    
+
     return {"status": "success"}
 
 # Authentication routes
@@ -551,10 +512,9 @@ async def register(
         errors.append("Password must be at least 8 characters")
     if db.query(User).filter(User.email == email).first():
         errors.append("Email already registered")
-    
     if errors:
         return templates.TemplateResponse("register.html", {"request": request, "errors": errors})
-    
+
     password_hash = hashlib.sha256(password.encode()).hexdigest()
     user = User(
         id=str(uuid.uuid4()),
@@ -563,17 +523,17 @@ async def register(
         subscription_status="trial",
         created_at=datetime.now()
     )
-    
+
     db.add(user)
     db.commit()
     db.refresh(user)
-    
+
     request.session["user"] = {
         "id": user.id,
         "email": user.email,
         "subscription_status": user.subscription_status
     }
-    
+
     return RedirectResponse(url="/pricing", status_code=303)
 
 # Health check

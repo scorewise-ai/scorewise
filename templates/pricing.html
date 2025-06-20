@@ -51,153 +51,16 @@
     </nav>
 
     <!-- Pricing Header -->
-    <section class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-16 text-center">
+    <section class="mx-auto px-4 sm:px-6 lg:px-8 py-16 text-center">
         <h1 class="text-4xl font-bold text-gray-900 mb-4">Choose Your Plan</h1>
         <p class="text-xl text-gray-600 mb-8">Start grading smarter with ScoreWise AI. Choose the plan that fits your needs.</p>
-    </section>
 
-    <!-- Pricing Cards -->
-    <section class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-16">
-        <div class="grid md:grid-cols-3 gap-8">
-            <!-- Standard Plan -->
-            <div class="bg-white rounded-xl shadow-lg border-2 border-gray-200 p-8 hover:shadow-xl transition-shadow">
-                <div class="text-center">
-                    <h3 class="text-2xl font-bold text-gray-900 mb-2">Standard</h3>
-                    <div class="text-4xl font-bold text-primary mb-1">$29</div>
-                    <div class="text-gray-500 mb-6">per month</div>
-                    <p class="text-gray-600 mb-8">Perfect for individual educators and small classes</p>
-                    
-                    <ul class="space-y-4 mb-8 text-left">
-                        <li class="flex items-center">
-                            <svg class="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Up to 100 assignments/month
-                        </li>
-                        <li class="flex items-center">
-                            <svg class="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            AI-powered grading
-                        </li>
-                        <li class="flex items-center">
-                            <svg class="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Basic analytics
-                        </li>
-                        <li class="flex items-center">
-                            <svg class="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Email support
-                        </li>
-                    </ul>
-                    
-                    <button onclick="subscribeToPlan('standard')" class="w-full bg-primary text-white py-3 px-6 rounded-lg font-semibold hover:bg-primary/90 transition-colors">
-                        Choose Standard
-                    </button>
-                </div>
-            </div>
-
-            <!-- Pro Plan -->
-            <div class="bg-white rounded-xl shadow-lg border-2 border-primary p-8 relative hover:shadow-xl transition-shadow">
-                <div class="absolute -top-4 left-1/2 transform -translate-x-1/2">
-                    <span class="bg-primary text-white px-4 py-1 rounded-full text-sm font-semibold">Most Popular</span>
-                </div>
-                
-                <div class="text-center">
-                    <h3 class="text-2xl font-bold text-gray-900 mb-2">Pro</h3>
-                    <div class="text-4xl font-bold text-primary mb-1">$79</div>
-                    <div class="text-gray-500 mb-6">per month</div>
-                    <p class="text-gray-600 mb-8">Ideal for departments and larger teaching loads</p>
-                    
-                    <ul class="space-y-4 mb-8 text-left">
-                        <li class="flex items-center">
-                            <svg class="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Up to 500 assignments/month
-                        </li>
-                        <li class="flex items-center">
-                            <svg class="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Advanced AI grading
-                        </li>
-                        <li class="flex items-center">
-                            <svg class="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Custom rubrics
-                        </li>
-                        <li class="flex items-center">
-                            <svg class="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Advanced analytics
-                        </li>
-                        <li class="flex items-center">
-                            <svg class="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Priority support
-                        </li>
-                    </ul>
-                    
-                    <button onclick="subscribeToPlan('pro')" class="w-full bg-primary text-white py-3 px-6 rounded-lg font-semibold hover:bg-primary/90 transition-colors">
-                        Choose Pro
-                    </button>
-                </div>
-            </div>
-
-            <!-- Enterprise Plan -->
-            <div class="bg-white rounded-xl shadow-lg border-2 border-gray-200 p-8 hover:shadow-xl transition-shadow">
-                <div class="text-center">
-                    <h3 class="text-2xl font-bold text-gray-900 mb-2">Enterprise</h3>
-                    <div class="text-4xl font-bold text-primary mb-1">$199</div>
-                    <div class="text-gray-500 mb-6">per month</div>
-                    <p class="text-gray-600 mb-8">For institutions and large-scale deployment</p>
-                    
-                    <ul class="space-y-4 mb-8 text-left">
-                        <li class="flex items-center">
-                            <svg class="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Unlimited assignments
-                        </li>
-                        <li class="flex items-center">
-                            <svg class="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Enterprise AI features
-                        </li>
-                        <li class="flex items-center">
-                            <svg class="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Multi-user management
-                        </li>
-                        <li class="flex items-center">
-                            <svg class="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            Custom integrations
-                        </li>
-                        <li class="flex items-center">
-                            <svg class="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                            24/7 dedicated support
-                        </li>
-                    </ul>
-                    
-                    <button onclick="subscribeToPlan('enterprise')" class="w-full bg-primary text-white py-3 px-6 rounded-lg font-semibold hover:bg-primary/90 transition-colors">
-                        Choose Enterprise
-                    </button>
-                </div>
-            </div>
-        </div>
+    <!-- Stripe Pricing Table Embed -->
+        <script async src="https://js.stripe.com/v3/pricing-table.js"></script>
+        <stripe-pricing-table
+            pricing-table-id="prctbl_1RbRgyBylIyddoGDMdN83GOH"
+            publishable-key="pk_live_51Rb2QmBylIyddoGD3g4QwfTq0r7k9Q9iN3zCGVyiSZSFAvUepCHCyNqwadlDZea9TcIdOaOje3F7OZListv8CQ3o00vIxqNiKu">
+        </stripe-pricing-table>
     </section>
 
     <!-- FAQ Section -->
@@ -268,34 +131,6 @@
     </footer>
 
     <script>
-        function subscribeToPlan(plan) {
-            {% if user %}
-                // User is logged in, create checkout session
-                fetch('/api/create-checkout-session', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                    },
-                    body: `plan=${plan}`
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.checkout_url) {
-                        window.location.href = data.checkout_url;
-                    } else {
-                        alert('Error creating checkout session');
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    alert('Error creating checkout session');
-                });
-            {% else %}
-                // User not logged in, show login modal
-                showLoginModal();
-            {% endif %}
-        }
-
         function showLoginModal() {
             document.getElementById('loginModal').classList.remove('hidden');
             document.getElementById('loginModal').classList.add('flex');
@@ -315,3 +150,4 @@
     </script>
 </body>
 </html>
+
