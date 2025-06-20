@@ -21,5 +21,7 @@ PyMuPDF>=1.23.0
 pdf2image>=1.17.0
 Pillow>=10.0.0
 pyenchant
+itsdangerous==2.1.2
+
 
 
