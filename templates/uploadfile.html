@@ -3,339 +3,388 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ScoreWise AI - Upload Assignment</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
-    <style>
-        .file-upload {
-            border: 2px dashed #dee2e6;
-            border-radius: 10px;
-            padding: 2rem;
-            text-align: center;
-            background-color: #f8f9fa;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-        .file-upload:hover {
-            background-color: #e9ecef;
-            border-color: #adb5bd;
-        }
-        .file-upload.dragover {
-            background-color: #e7f4ff;
-            border-color: #0d6efd;
-        }
-        .file-list {
-            max-height: 200px;
-            overflow-y: auto;
-        }
-        .subject-optgroup {
-            font-weight: 600;
-            font-style: italic;
-        }
-    </style>
+    <title>Upload Assignment - ScoreWise AI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
-    <nav class="navbar navbar-expand-lg navbar-light bg-light">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="/">ScoreWise AI</a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav me-auto">
-                    <li class="nav-item"><a class="nav-link" href="/dashboard">Dashboard</a></li>
-                    <li class="nav-item"><a class="nav-link active" href="/upload">Grade Assignments</a></li>
-                    <li class="nav-item"><a class="nav-link" href="/pricing">Pricing</a></li>
-                </ul>
-                <div class="d-flex">
-                    {% if user %}
-                        <span class="navbar-text me-3">Welcome, {{ user.email }}</span>
-                        <form action="/auth/logout" method="post">
-                            <button type="submit" class="btn btn-outline-primary">Logout</button>
-                        </form>
-                    {% else %}
-                        <a href="/" class="btn btn-outline-primary">Login</a>
-                    {% endif %}
+<body class="bg-gray-50 min-h-screen">
+    <!-- Navigation -->
+    <nav class="bg-white shadow-sm border-b">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <div class="flex items-center">
+                    <a href="/" class="text-xl font-bold text-blue-600">ScoreWise AI</a>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <a href="/dashboard" class="text-blue-600 hover:text-blue-700">Dashboard</a>
+                    <a href="/pricing" class="text-blue-600 hover:text-blue-700">Pricing</a>
+                    <span class="text-gray-700">{{ user.email }}</span>
+                    <form method="POST" action="/auth/logout" class="inline">
+                        <button type="submit" class="text-gray-600 hover:text-gray-700">Logout</button>
+                    </form>
                 </div>
             </div>
         </div>
     </nav>
 
-    <div class="container my-5">
-        <div class="row justify-content-center">
-            <div class="col-lg-8">
-                <div class="card shadow-sm">
-                    <div class="card-header bg-white">
-                        <h3 class="mb-0">Upload your assignment and student submissions</h3>
+    <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- Usage Warning -->
+        {% if usage_summary and usage_summary.assignments_limit != 'Unlimited' and usage_summary.assignments_used >= usage_summary.assignments_limit %}
+        <div class="bg-red-50 border border-red-200 rounded-md p-4 mb-6">
+            <div class="flex">
+                <div class="flex-shrink-0">
+                    <svg class="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path>
+                    </svg>
+                </div>
+                <div class="ml-3">
+                    <h3 class="text-sm font-medium text-red-800">Monthly Limit Reached</h3>
+                    <p class="mt-1 text-sm text-red-700">
+                        You've used {{ usage_summary.assignments_used }} of {{ usage_summary.assignments_limit }} assignments this month.
+                        <a href="/pricing" class="font-medium underline">Upgrade your plan</a> to continue grading.
+                    </p>
+                </div>
+            </div>
+        </div>
+        {% elif usage_summary and usage_summary.assignments_limit != 'Unlimited' and usage_summary.assignments_used >= usage_summary.assignments_limit * 0.8 %}
+        <div class="bg-yellow-50 border border-yellow-200 rounded-md p-4 mb-6">
+            <div class="flex">
+                <div class="flex-shrink-0">
+                    <svg class="h-5 w-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
+                    </svg>
+                </div>
+                <div class="ml-3">
+                    <h3 class="text-sm font-medium text-yellow-800">Approaching Monthly Limit</h3>
+                    <p class="mt-1 text-sm text-yellow-700">
+                        You've used {{ usage_summary.assignments_used }} of {{ usage_summary.assignments_limit }} assignments this month.
+                        Consider <a href="/pricing" class="font-medium underline">upgrading your plan</a> if you need more.
+                    </p>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Usage Summary -->
+        {% if usage_summary %}
+        <div class="bg-white rounded-lg shadow mb-6">
+            <div class="px-6 py-4 border-b border-gray-200">
+                <h2 class="text-lg font-semibold text-gray-900">Current Plan: {{ usage_summary.tier }}</h2>
+            </div>
+            <div class="p-6">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                    <div>
+                        <span class="text-gray-600">Assignments Used:</span>
+                        <span class="ml-2 font-semibold">{{ usage_summary.assignments_used }} / {{ usage_summary.assignments_limit }}</span>
                     </div>
-                    <div class="card-body">
-                        <form id="uploadForm" action="/api/upload" method="post" enctype="multipart/form-data">
-                            <!-- Subject Selection -->
-                            <div class="mb-4">
-                                <label for="subject" class="form-label">Subject *</label>
-                                <select id="subject" name="subject" class="form-select" required>
-                                    <optgroup label="STEM Subjects" class="subject-optgroup">
-                                        <option value="algebra">Algebra</option>
-                                        <option value="biology">Biology</option>
-                                        <option value="calculus">Calculus</option>
-                                        <option value="chemistry">Chemistry</option>
-                                        <option value="engineering">Engineering</option>
-                                        <option value="physics">Physics</option>
-                                    </optgroup>
-                                    <optgroup label="Humanities" class="subject-optgroup">
-                                        <option value="english_literature">English Literature</option>
-                                        <option value="history">History</option>
-                                        <option value="philosophy">Philosophy</option>
-                                        <option value="creative_writing">Creative Writing</option>
-                                    </optgroup>
-                                    <optgroup label="Social Sciences" class="subject-optgroup">
-                                        <option value="psychology">Psychology</option>
-                                        <option value="economics">Economics</option>
-                                        <option value="sociology">Sociology</option>
-                                        <option value="political_science">Political Science</option>
-                                    </optgroup>
-                                    <optgroup label="Arts" class="subject-optgroup">
-                                        <option value="music_theory">Music Theory</option>
-                                        <option value="art_history">Art History</option>
-                                        <option value="creative_arts">Creative Arts</option>
-                                        <option value="drama">Drama</option>
-                                    </optgroup>
-                                    <optgroup label="Language Arts" class="subject-optgroup">
-                                        <option value="spanish">Spanish</option>
-                                        <option value="french">French</option>
-                                        <option value="german">German</option>
-                                        <option value="chinese">Chinese</option>
-                                        <option value="japanese">Japanese</option>
-                                    </optgroup>
-                                </select>
-                            </div>
-                            
-                            <!-- Assessment Type Selection -->
-                            <div class="mb-4">
-                                <label for="assessment_type" class="form-label">Assessment Type *</label>
-                                <select id="assessment_type" name="assessment_type" class="form-select" required>
-                                    <option value="essay">Essay</option>
-                                    <option value="lab_report">Lab Report</option>
-                                    <option value="exam">Exam</option>
-                                    <option value="quiz">Quiz</option>
-                                    <option value="assignment">Assignment</option>
-                                    <option value="creative_work">Creative Work</option>
-                                    <option value="research_paper">Research Paper</option>
-                                    <option value="case_study">Case Study</option>
-                                </select>
-                            </div>
-                            
-                            <!-- Assignment File -->
-                            <div class="mb-4">
-                                <label for="assignment_file" class="form-label">Assignment Instructions (PDF) *</label>
-                                <div class="file-upload" id="assignmentUploadArea">
-                                    <i class="bi bi-cloud-arrow-up fs-1 text-primary"></i>
-                                    <p class="mt-2 mb-1">Click to upload or drag and drop</p>
-                                    <p class="small text-muted mb-0">PDF files only (Max 10MB)</p>
-                                    <input type="file" class="d-none" id="assignment_file" name="assignment_file" accept=".pdf" required>
+                    <div>
+                        <span class="text-gray-600">Max Submissions:</span>
+                        <span class="ml-2 font-semibold">{{ usage_summary.submissions_per_assignment_limit }}</span>
+                    </div>
+                    <div>
+                        <span class="text-gray-600">OCR Support:</span>
+                        <span class="ml-2 font-semibold">
+                            {% if usage_summary.features.ocr %}
+                                <span class="text-green-600">Available</span>
+                            {% else %}
+                                <span class="text-red-600">Not Available</span>
+                            {% endif %}
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Upload Form -->
+        <div class="bg-white shadow rounded-lg">
+            <div class="px-6 py-4 border-b border-gray-200">
+                <h1 class="text-xl font-semibold text-gray-900">Upload Assignment</h1>
+                <p class="mt-1 text-sm text-gray-600">Upload your assignment files to start AI-powered grading</p>
+            </div>
+
+            <form method="POST" action="/api/upload" enctype="multipart/form-data" class="p-6 space-y-6">
+                <!-- Assignment Details -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <label for="subject" class="block text-sm font-medium text-gray-700">Subject</label>
+                        <select id="subject" name="subject" required 
+                                class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                            <option value="">Select a subject</option>
+                            {% for subject in valid_subjects %}
+                                {% if subject in allowed_subjects %}
+                                    <option value="{{ subject }}">{{ subject.replace('_', ' ').title() }}</option>
+                                {% else %}
+                                    <option value="{{ subject }}" disabled class="text-gray-400">
+                                        {{ subject.replace('_', ' ').title() }} (Upgrade Required)
+                                    </option>
+                                {% endif %}
+                            {% endfor %}
+                        </select>
+                        {% if allowed_subjects|length < valid_subjects|length %}
+                        <p class="mt-1 text-xs text-gray-500">
+                            Some subjects require a paid plan. <a href="/pricing" class="text-blue-600 hover:underline">Upgrade</a> to access all subjects.
+                        </p>
+                        {% endif %}
+                    </div>
+
+                    <div>
+                        <label for="assessment_type" class="block text-sm font-medium text-gray-700">Assessment Type</label>
+                        <select id="assessment_type" name="assessment_type" required 
+                                class="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                            <option value="">Select assessment type</option>
+                            {% for type in valid_assessment_types %}
+                                <option value="{{ type }}">{{ type.replace('_', ' ').title() }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+
+                <!-- File Uploads -->
+                <div class="space-y-6">
+                    <!-- Assignment Instructions -->
+                    <div>
+                        <label for="assignment_file" class="block text-sm font-medium text-gray-700">
+                            Assignment Instructions *
+                        </label>
+                        <div class="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md drop-area hover:border-gray-400 transition-colors">
+                            <div class="space-y-1 text-center">
+                                <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                                    <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                                </svg>
+                                <div class="flex text-sm text-gray-600">
+                                    <label for="assignment_file" class="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500">
+                                        <span>Upload assignment file</span>
+                                        <input id="assignment_file" name="assignment_file" type="file" accept=".pdf" required class="sr-only">
+                                    </label>
+                                    <p class="pl-1">or drag and drop</p>
                                 </div>
-                                <div id="assignmentFileName" class="mt-2 small fw-bold"></div>
+                                <p class="text-xs text-gray-500">PDF files only (Max 10MB)</p>
                             </div>
-                            
-                            <!-- Student Submissions -->
-                            <div class="mb-4">
-                                <label for="student_submissions" class="form-label">Student Submissions (PDF) *</label>
-                                <div class="file-upload" id="submissionsUploadArea">
-                                    <i class="bi bi-cloud-arrow-up fs-1 text-primary"></i>
-                                    <p class="mt-2 mb-1">Click to upload or drag and drop</p>
-                                    <p class="small text-muted mb-0">PDF files only, multiple files allowed (Max 10MB each)</p>
-                                    <input type="file" class="d-none" id="student_submissions" name="student_submissions" accept=".pdf" multiple required>
+                        </div>
+                    </div>
+
+                    <!-- Student Submissions -->
+                    <div>
+                        <label for="student_submissions" class="block text-sm font-medium text-gray-700">
+                            Student Submissions *
+                            {% if usage_summary %}
+                                <span class="text-sm text-gray-500">(Max {{ usage_summary.submissions_per_assignment_limit }} files)</span>
+                            {% endif %}
+                        </label>
+                        <div class="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md drop-area hover:border-gray-400 transition-colors">
+                            <div class="space-y-1 text-center">
+                                <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                                    <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                                </svg>
+                                <div class="flex text-sm text-gray-600">
+                                    <label for="student_submissions" class="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500">
+                                        <span>Upload student submissions</span>
+                                        <input id="student_submissions" name="student_submissions" type="file" accept=".pdf" multiple required class="sr-only">
+                                    </label>
+                                    <p class="pl-1">or drag and drop</p>
                                 </div>
-                                <div id="submissionsFileList" class="file-list mt-2"></div>
+                                <p class="text-xs text-gray-500">PDF files only, multiple files allowed (Max 10MB each)</p>
                             </div>
-                            
-                            <!-- Solution File (Optional) -->
-                            <div class="mb-4">
-                                <label for="solution_file" class="form-label">Solution Key (PDF) - Optional</label>
-                                <div class="file-upload" id="solutionUploadArea">
-                                    <i class="bi bi-cloud-arrow-up fs-1 text-secondary"></i>
-                                    <p class="mt-2 mb-1">Click to upload or drag and drop</p>
-                                    <p class="small text-muted mb-0">PDF file only (Max 10MB)</p>
-                                    <input type="file" class="d-none" id="solution_file" name="solution_file" accept=".pdf">
+                        </div>
+                    </div>
+
+                    <!-- Solution File (Optional) -->
+                    <div>
+                        <label for="solution_file" class="block text-sm font-medium text-gray-700">
+                            Solution/Answer Key (Optional)
+                        </label>
+                        <div class="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md drop-area hover:border-gray-400 transition-colors">
+                            <div class="space-y-1 text-center">
+                                <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                                    <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                                </svg>
+                                <div class="flex text-sm text-gray-600">
+                                    <label for="solution_file" class="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500">
+                                        <span>Upload solution file</span>
+                                        <input id="solution_file" name="solution_file" type="file" accept=".pdf" class="sr-only">
+                                    </label>
+                                    <p class="pl-1">or drag and drop</p>
                                 </div>
-                                <div id="solutionFileName" class="mt-2 small fw-bold"></div>
+                                <p class="text-xs text-gray-500">PDF file only (Max 10MB)</p>
                             </div>
-                            
-                            <!-- Custom Rubric (Optional) -->
-                            <div class="mb-4">
-                                <label for="custom_rubric" class="form-label">Custom Rubric (PDF) - Optional</label>
-                                <div class="file-upload" id="rubricUploadArea">
-                                    <i class="bi bi-cloud-arrow-up fs-1 text-secondary"></i>
-                                    <p class="mt-2 mb-1">Click to upload or drag and drop</p>
-                                    <p class="small text-muted mb-0">PDF file only (Max 10MB)</p>
-                                    <input type="file" class="d-none" id="custom_rubric" name="custom_rubric" accept=".pdf">
+                        </div>
+                    </div>
+
+                    <!-- Custom Rubric (Optional) -->
+                    <div>
+                        <label for="custom_rubric" class="block text-sm font-medium text-gray-700">
+                            Custom Rubric (Optional)
+                            {% if usage_summary and not usage_summary.features.custom_rubrics %}
+                                <span class="text-sm text-red-600">(Upgrade Required)</span>
+                            {% endif %}
+                        </label>
+                        <div class="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-gray-300 border-dashed rounded-md drop-area hover:border-gray-400 transition-colors">
+                            <div class="space-y-1 text-center">
+                                <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                                    <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                                </svg>
+                                <div class="flex text-sm text-gray-600">
+                                    <label for="custom_rubric" class="relative cursor-pointer bg-white rounded-md font-medium text-blue-600 hover:text-blue-500 focus-within:outline-none focus-within:ring-2 focus-within:ring-offset-2 focus-within:ring-blue-500">
+                                        <span>Upload custom rubric</span>
+                                        <input id="custom_rubric" name="custom_rubric" type="file" accept=".pdf" 
+                                               {% if usage_summary and not usage_summary.features.custom_rubrics %}disabled{% endif %} 
+                                               class="sr-only">
+                                    </label>
+                                    <p class="pl-1">or drag and drop</p>
                                 </div>
-                                <div id="rubricFileName" class="mt-2 small fw-bold"></div>
+                                <p class="text-xs text-gray-500">PDF file only (Max 10MB)</p>
+                                {% if usage_summary and not usage_summary.features.custom_rubrics %}
+                                <p class="text-xs text-red-500">
+                                    Custom rubrics not available in your plan. <a href="/pricing" class="underline">Upgrade</a> to use this feature.
+                                </p>
+                                {% endif %}
                             </div>
-                            
-                            <div class="d-grid">
-                                <button type="submit" class="btn btn-primary btn-lg" id="submitBtn">
-                                    <i class="bi bi-lightning-charge"></i> Grade Submissions
-                                </button>
-                            </div>
-                        </form>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Feature Information -->
+                {% if usage_summary %}
+                <div class="bg-blue-50 border border-blue-200 rounded-md p-4">
+                    <h3 class="text-sm font-medium text-blue-800 mb-2">Available Features for {{ usage_summary.tier }}</h3>
+                    <ul class="text-sm text-blue-700 space-y-1">
+                        {% if usage_summary.features.ocr %}
+                            <li>✓ Handwriting OCR for scanned documents</li>
+                        {% else %}
+                            <li>✗ Handwriting OCR (upgrade required)</li>
+                        {% endif %}
+                        {% if usage_summary.features.analytics %}
+                            <li>✓ {{ usage_summary.features.analytics.title() }} analytics and insights</li>
+                        {% else %}
+                            <li>✗ Analytics (upgrade required)</li>
+                        {% endif %}
+                        {% if usage_summary.features.priority_processing %}
+                            <li>✓ Priority processing queue</li>
+                        {% else %}
+                            <li>✗ Priority processing (upgrade required)</li>
+                        {% endif %}
+                    </ul>
+                </div>
+                {% endif %}
+
+                <!-- Submit Button -->
+                <div class="flex justify-end">
+                    {% if usage_summary and usage_summary.assignments_limit != 'Unlimited' and usage_summary.assignments_used >= usage_summary.assignments_limit %}
+                        <a href="/pricing" class="bg-orange-600 text-white px-6 py-2 rounded-md hover:bg-orange-700">
+                            Upgrade to Continue
+                        </a>
+                    {% else %}
+                        <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                            Start Grading
+                        </button>
+                    {% endif %}
+                </div>
+            </form>
+        </div>
+
+        <!-- Help Section -->
+        <div class="mt-8 bg-white shadow rounded-lg">
+            <div class="px-6 py-4 border-b border-gray-200">
+                <h2 class="text-lg font-semibold text-gray-900">How It Works</h2>
+            </div>
+            <div class="p-6">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="text-center">
+                        <div class="bg-blue-100 rounded-full w-12 h-12 flex items-center justify-center mx-auto mb-3">
+                            <span class="text-blue-600 font-bold">1</span>
+                        </div>
+                        <h3 class="font-medium text-gray-900 mb-2">Upload Files</h3>
+                        <p class="text-sm text-gray-600">Upload your assignment instructions and student submissions. Optionally add solution files and custom rubrics.</p>
+                    </div>
+                    <div class="text-center">
+                        <div class="bg-blue-100 rounded-full w-12 h-12 flex items-center justify-center mx-auto mb-3">
+                            <span class="text-blue-600 font-bold">2</span>
+                        </div>
+                        <h3 class="font-medium text-gray-900 mb-2">AI Analysis</h3>
+                        <p class="text-sm text-gray-600">Our AI analyzes each submission against your criteria and generates detailed feedback and scores.</p>
+                    </div>
+                    <div class="text-center">
+                        <div class="bg-blue-100 rounded-full w-12 h-12 flex items-center justify-center mx-auto mb-3">
+                            <span class="text-blue-600 font-bold">3</span>
+                        </div>
+                        <h3 class="font-medium text-gray-900 mb-2">Download Reports</h3>
+                        <p class="text-sm text-gray-600">Receive comprehensive grading reports with scores, feedback, and suggestions for each student.</p>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <footer class="bg-light mt-5 py-4">
-        <div class="container">
-            <div class="row">
-                <div class="col-md-6">
-                    <h5>ScoreWise AI</h5>
-                    <p class="text-muted">AI-powered assignment grading for educators</p>
-                </div>
-                <div class="col-md-6 text-md-end">
-                    <ul class="list-inline mb-0">
-                        <li class="list-inline-item"><a href="/">Home</a></li>
-                        <li class="list-inline-item"><a href="/pricing">Pricing</a></li>
-                        <li class="list-inline-item"><a href="#">Contact</a></li>
-                        <li class="list-inline-item"><a href="#">Privacy Policy</a></li>
-                    </ul>
-                </div>
-            </div>
-            <div class="row mt-3">
-                <div class="col-12 text-center">
-                    <p class="text-muted small mb-0">&copy; 2025 ScoreWise AI. All rights reserved.</p>
-                </div>
-            </div>
-        </div>
-    </footer>
-
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Assignment file handling
-        const assignmentUploadArea = document.getElementById('assignmentUploadArea');
-        const assignmentFileInput = document.getElementById('assignment_file');
-        const assignmentFileName = document.getElementById('assignmentFileName');
-    
-        assignmentUploadArea.addEventListener('click', () => assignmentFileInput.click());
-        assignmentFileInput.addEventListener('change', function() {
-            if (this.files.length > 0) {
-                assignmentFileName.textContent = this.files[0].name;
-            }
-        });
-    
-        // Student submissions handling
-        const submissionsUploadArea = document.getElementById('submissionsUploadArea');
-        const submissionsFileInput = document.getElementById('student_submissions');
-        const submissionsFileList = document.getElementById('submissionsFileList');
-    
-        submissionsUploadArea.addEventListener('click', () => submissionsFileInput.click());
-        submissionsFileInput.addEventListener('change', function() {
-            submissionsFileList.innerHTML = '';
-            if (this.files.length > 0) {
-                for (let i = 0; i < this.files.length; i++) {
-                    const fileItem = document.createElement('div');
-                    fileItem.className = 'd-flex justify-content-between align-items-center mb-1';
-                    fileItem.innerHTML = `
-                        <div>${this.files[i].name}</div>
-                        <div class="text-success">Ready</div>
-                    `;
-                    submissionsFileList.appendChild(fileItem);
-                }
-            }
-        });
-    
-        // Solution file handling
-        const solutionUploadArea = document.getElementById('solutionUploadArea');
-        const solutionFileInput = document.getElementById('solution_file');
-        const solutionFileName = document.getElementById('solutionFileName');
-    
-        solutionUploadArea.addEventListener('click', () => solutionFileInput.click());
-        solutionFileInput.addEventListener('change', function() {
-            if (this.files.length > 0) {
-                solutionFileName.textContent = this.files[0].name;
-            }
-        });
-    
-        // Rubric file handling
-        const rubricUploadArea = document.getElementById('rubricUploadArea');
-        const rubricFileInput = document.getElementById('custom_rubric');
-        const rubricFileName = document.getElementById('rubricFileName');
-    
-        rubricUploadArea.addEventListener('click', () => rubricFileInput.click());
-        rubricFileInput.addEventListener('change', function() {
-            if (this.files.length > 0) {
-                rubricFileName.textContent = this.files[0].name;
-            }
-        });
-    
-        // Improved drag and drop functionality
-        function setupDragDrop(uploadArea, fileInput) {
-            uploadArea.addEventListener('dragover', (e) => {
-                e.preventDefault();
-                uploadArea.classList.add('dragover');
-            });
-        
-            uploadArea.addEventListener('dragleave', () => {
-                uploadArea.classList.remove('dragover');
-            });
-        
-            uploadArea.addEventListener('drop', (e) => {
-                e.preventDefault();
-                uploadArea.classList.remove('dragover');
+        // File upload progress and validation
+        document.addEventListener('DOMContentLoaded', function() {
+            const form = document.querySelector('form');
+            const submitBtn = document.querySelector('button[type="submit"]');
             
-                if (e.dataTransfer.files.length > 0) {
-                    // Create a new DataTransfer object to properly set files
-                    const dataTransfer = new DataTransfer();
-                
-                    // Add files to the DataTransfer object, filtering for PDFs
-                    for (let i = 0; i < e.dataTransfer.files.length; i++) {
-                        const file = e.dataTransfer.files[i];
-                        if (file.name.toLowerCase().endsWith('.pdf')) {
-                            dataTransfer.items.add(file);
+            form.addEventListener('submit', function() {
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Processing...';
+                submitBtn.classList.add('opacity-50');
+            });
+
+            // File input change handlers to show selected files
+            const fileInputs = document.querySelectorAll('input[type="file"]');
+            fileInputs.forEach(input => {
+                input.addEventListener('change', function() {
+                    const label = this.closest('div').querySelector('label span');
+                    if (this.files.length > 0) {
+                        if (this.multiple) {
+                            label.textContent = `${this.files.length} files selected`;
+                        } else {
+                            label.textContent = this.files[0].name;
                         }
                     }
-                
-                    // Set the files on the input element
-                    fileInput.files = dataTransfer.files;
-                
-                    // Trigger change event
-                    const event = new Event('change', { bubbles: true });
-                    fileInput.dispatchEvent(event);
+                });
+            });
+        });
+    </script>
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // For each file input with a drop area
+        document.querySelectorAll('.drop-area').forEach(function(dropArea) {
+            const input = dropArea.querySelector('input[type="file"]');
+
+            // Prevent default drag behaviors
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                dropArea.addEventListener(eventName, function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }, false);
+            });
+
+            // Highlight drop area on dragover
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropArea.addEventListener(eventName, function() {
+                    dropArea.classList.add('border-blue-500', 'bg-blue-50');
+                }, false);
+            });
+
+            // Unhighlight on dragleave/drop
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropArea.addEventListener(eventName, function() {
+                    dropArea.classList.remove('border-blue-500', 'bg-blue-50');
+                }, false);
+            });
+
+            // Handle dropped files
+            dropArea.addEventListener('drop', function(e) {
+                if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                    input.files = e.dataTransfer.files;
+                    // Optionally, update the label text to show selected files
+                    if (input.multiple) {
+                        dropArea.querySelector('label span').textContent = `${input.files.length} files selected`;
+                    } else {
+                        dropArea.querySelector('label span').textContent = input.files[0].name;
+                    }
                 }
             });
-        }
-    
-        setupDragDrop(assignmentUploadArea, assignmentFileInput);
-        setupDragDrop(submissionsUploadArea, submissionsFileInput);
-        setupDragDrop(solutionUploadArea, solutionFileInput);
-        setupDragDrop(rubricUploadArea, rubricFileInput);
-    
-        // Enhanced form submission with validation
-        document.getElementById('uploadForm').addEventListener('submit', function(e) {
-            // Check if required files are selected
-            const assignmentFile = document.getElementById('assignment_file').files;
-            const studentSubmissions = document.getElementById('student_submissions').files;
-    
-            if (assignmentFile.length === 0) {
-                e.preventDefault();
-                alert('Please select an assignment instructions file.');
-                return false;
-            }
-    
-            if (studentSubmissions.length === 0) {
-                e.preventDefault();
-                alert('Please select at least one student submission file.');
-                return false;
-            }
-    
-            // If files are selected, show loading state but DON'T prevent default
-            const submitBtn = document.getElementById('submitBtn');
-            submitBtn.disabled = true;
-            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span> Processing...';
-    
-            // Allow the form to submit naturally 
         });
-
+    });
     </script>
 </body>
 </html>

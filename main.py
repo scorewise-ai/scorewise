@@ -1,38 +1,39 @@
-# ScoreWise AI - Main FastAPI Application
+# ScoreWise AI - Main FastAPI Application with Subscription Management
 import os
 import json
 import uuid
 import asyncio
 import shutil
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, List, Dict, Union, Any
+from collections import Counter
 import aiofiles
 import hashlib
-from fastapi import FastAPI, Request, Response, HTTPException, Depends, Form, File, UploadFile, BackgroundTasks
+from fastapi import FastAPI, Request, Response, HTTPException, Depends, Form, File, UploadFile, BackgroundTasks, Header
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, FileResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 import stripe
-import requests
-from pydantic import BaseModel
 import uvicorn
-from db import SessionLocal, Base, engine
-from sqlalchemy import Column, String, DateTime
 from sqlalchemy.orm import Session
-
-# Import the fixed grader
+import numpy as np
+from db import SessionLocal, get_db, create_tables, migrate_database
+from models import User, Assignment, SubscriptionTier, SubscriptionStatus, TIER_CONFIGS
+from subscription_service import subscription_service
 from grader import grader
+from datetime import datetime
 
 # Environment variables
 from dotenv import load_dotenv
 load_dotenv()
 
-# Check environment variables
-required_vars = ["STRIPE_SECRET_KEY", "STRIPE_PUBLISHABLE_KEY", "PERPLEXITY_API_KEY"]
+# Check required environment variables
+required_vars = ["STRIPE_SECRET_KEY", "STRIPE_PUBLISHABLE_KEY", "PERPLEXITY_API_KEY", "STRIPE_WEBHOOK_SECRET"]
 missing_vars = [var for var in required_vars if not os.getenv(var)]
+
 if missing_vars:
     raise Exception(f"Missing required environment variables: {', '.join(missing_vars)}")
 
@@ -40,13 +41,14 @@ if missing_vars:
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-here")
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
 STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY")
-PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
+PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
+BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
 
-# Stripe Price IDs
-PRICE_ID_STANDARD = os.getenv("PRICE_ID_STANDARD")
-PRICE_ID_PRO = os.getenv("PRICE_ID_PRO")
-PRICE_ID_ENTERPRISE = os.getenv("PRICE_ID_ENTERPRISE")
+# Stripe Price IDs (set these in your .env file)
+PRICE_ID_EDUCATOR = os.getenv("PRICE_ID_EDUCATOR")
+PRICE_ID_PROFESSIONAL = os.getenv("PRICE_ID_PROFESSIONAL") 
+PRICE_ID_INSTITUTION = os.getenv("PRICE_ID_INSTITUTION")
 
 # Configure Stripe
 stripe.api_key = STRIPE_SECRET_KEY
@@ -73,43 +75,12 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
-# Models
-class GradingTask(BaseModel):
-    task_id: str
-    subject: str
-    assessment_type: str
-    status: str = "processing"
-    created_at: datetime
-    user_id: str
-    files: Dict[str, Union[str, List[str]]] = {}
-    results: Optional[Dict] = None
-    error: Optional[str] = None
-
-class User(Base):
-    __tablename__ = "users"
-    id = Column(String, primary_key=True, index=True)
-    email = Column(String, unique=True, index=True, nullable=False)
-    password_hash = Column(String, nullable=False)
-    subscription_status = Column(String, default="trial")
-    created_at = Column(DateTime)
-
-# Create database tables
-Base.metadata.create_all(bind=engine)
-
-# In-memory storage for tasks
-tasks_storage: Dict[str, GradingTask] = {}
-
 # Subjects list for validation
 VALID_SUBJECTS = [
-    # STEM subjects
     "algebra", "biology", "calculus", "chemistry", "engineering", "physics",
-    # Humanities
     "english_literature", "history", "philosophy", "creative_writing",
-    # Social Sciences
     "psychology", "economics", "sociology", "political_science",
-    # Arts
     "music_theory", "art_history", "creative_arts", "drama",
-    # Language Arts
     "spanish", "french", "german", "chinese", "japanese"
 ]
 
@@ -119,25 +90,33 @@ VALID_ASSESSMENT_TYPES = [
 ]
 
 # Utility functions
-def get_current_user(request: Request) -> Optional[Dict]:
-    return request.session.get("user")
+def get_current_user(request: Request, db: Session = None) -> Optional[User]:
+    """Get current user from session"""
+    session_user = request.session.get("user")
+    if not session_user or not db:
+        return None
+    
+    # Get fresh user data from database
+    user = db.query(User).filter(User.id == session_user.get("id")).first()
+    return user
 
-def require_auth(request: Request):
-    user = get_current_user(request)
+def require_auth(request: Request, db: Session = Depends(get_db)):
+    """Require authentication and return user or redirect"""
+    user = get_current_user(request, db)
     if not user:
         return RedirectResponse(url="/?login=required", status_code=303)
     return user
 
-def has_active_subscription(user: Dict) -> bool:
-    status = user.get("subscription_status", "")
-    return status in ["active", "trial"]
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+def has_active_subscription(user: User) -> bool:
+    """Check if user has an active subscription or valid trial"""
+    if user.subscription_status in ["active", "trialing"]:
+        return True
+    
+    # Check if trial is still valid
+    if user.subscription_tier == SubscriptionTier.TRIAL.value and user.trial_end:
+        return datetime.now() < user.trial_end
+    
+    return False
 
 async def save_task_metadata(task_id: str, task_data: Dict):
     """Save task metadata to file"""
@@ -159,62 +138,208 @@ async def load_task_metadata(task_id: str) -> Optional[Dict]:
     except:
         return None
 
+# Initialize database
+@app.on_event("startup")
+async def startup_event():
+    """Initialize database on startup"""
+    try:
+        migrate_database()
+        create_tables()
+    except Exception as e:
+        print(f"Database initialization error: {str(e)}")
+
 # Routes
 @app.get("/", response_class=HTMLResponse)
-async def home(request: Request):
-    user = get_current_user(request)
+async def home(request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    current_year = datetime.now().year
     return templates.TemplateResponse("index.html", {
         "request": request,
         "user": user,
-        "stripe_publishable_key": STRIPE_PUBLISHABLE_KEY
+        "current_year": current_year
     })
 
 @app.get("/pricing", response_class=HTMLResponse)
-async def pricing(request: Request):
-    user = get_current_user(request)
+async def pricing(request: Request, db: Session = Depends(get_db)):
+    user = get_current_user(request, db)
+    
+    # Get usage summary if user is logged in
+    usage_summary = None
+    if user:
+        usage_summary = subscription_service.get_usage_summary(user, db)
+
+    # Fetch Stripe prices dynamically
+    price_ids = {
+        "educator": os.getenv("PRICE_ID_EDUCATOR"),
+        "professional": os.getenv("PRICE_ID_PROFESSIONAL"),
+        "institution": os.getenv("PRICE_ID_INSTITUTION")
+    }
+    stripe_prices = {}
+    for key, price_id in price_ids.items():
+        if price_id:
+            price_obj = stripe.Price.retrieve(price_id)
+            # Stripe stores price in cents (e.g., 2900 = $29.00)
+            amount = price_obj["unit_amount"] / 100
+            currency = price_obj["currency"].upper()
+            stripe_prices[key] = {
+                "amount": f"{amount:.2f}",
+                "currency": currency,
+                "interval": price_obj["recurring"]["interval"] if price_obj.get("recurring") else "once"
+            }
+        else:
+            stripe_prices[key] = None
+    
     return templates.TemplateResponse("pricing.html", {
         "request": request,
         "user": user,
+        "usage_summary": usage_summary,
+        "tier_configs": TIER_CONFIGS,
         "stripe_publishable_key": STRIPE_PUBLISHABLE_KEY,
-        "price_ids": {
-            "standard": PRICE_ID_STANDARD,
-            "pro": PRICE_ID_PRO,
-            "enterprise": PRICE_ID_ENTERPRISE
-        }
+        "price_ids": price_ids,
     })
 
 @app.get("/upload", response_class=HTMLResponse)
-async def upload_page(request: Request):
-    user = require_auth(request)
+async def upload_page(request: Request, db: Session = Depends(get_db)):
+    user = require_auth(request, db)
     if isinstance(user, RedirectResponse):
         return user
+    
     if not has_active_subscription(user):
-        return RedirectResponse(url="/pricing", status_code=303)
+        return RedirectResponse(url="/pricing?expired=true", status_code=303)
+    
+    # Get user's tier configuration and usage
+    usage_summary = subscription_service.get_usage_summary(user, db)
+    allowed_subjects = subscription_service.get_allowed_subjects(user)
+    
     return templates.TemplateResponse("uploadfile.html", {
         "request": request,
         "user": user,
+        "usage_summary": usage_summary,
         "valid_subjects": VALID_SUBJECTS,
+        "allowed_subjects": allowed_subjects,
         "valid_assessment_types": VALID_ASSESSMENT_TYPES
     })
 
 @app.get("/dashboard", response_class=HTMLResponse)
-async def dashboard(request: Request):
-    user = require_auth(request)
+async def dashboard(request: Request, db: Session = Depends(get_db)):
+    user = require_auth(request, db)
     if isinstance(user, RedirectResponse):
         return user
+
     if not has_active_subscription(user):
-        return RedirectResponse(url="/pricing", status_code=303)
-    
-    # Get user's recent tasks
-    user_tasks = []
-    for task_id, task in tasks_storage.items():
-        if task.user_id == user.get("id"):
-            user_tasks.append(task)
-    
+        return RedirectResponse(url="/pricing?expired=true", status_code=303)
+
+    # Get user's recent assignments
+    recent_assignments = db.query(Assignment).filter(
+        Assignment.user_id == user.id
+    ).order_by(Assignment.created_at.desc()).limit(10).all()
+
+    usage_summary = subscription_service.get_usage_summary(user, db)
+
+    # Only completed assignments with results
+    completed_assignments = [a for a in recent_assignments if a.status == "completed" and a.results]
+    all_stats = [a.results.get("overall_statistics") for a in completed_assignments if a.results.get("overall_statistics")]
+    all_individual = []
+    for a in completed_assignments:
+        if a.results.get("individual_results"):
+            for r in a.results["individual_results"]:
+                all_individual.append({
+                    "assignment_id": a.id,
+                    "score": r.get("overall_score"),
+                    "rubric_scores": r.get("rubric_scores", {}),
+                    "student_name": r.get("student_name", "Student"),
+                    "date": a.created_at.strftime("%Y-%m-%d"),
+                })
+
+    # Basic analytics
+    def aggregate_basic_stats(stats_list):
+        if not stats_list:
+            return None
+        scores = [s.get("average_score", 0) for s in stats_list if s]
+        total_assignments = len(stats_list)
+        grade_dist = {"A": 0, "B": 0, "C": 0, "D": 0, "F": 0}
+        for s in stats_list:
+            for k in grade_dist:
+                grade_dist[k] += s.get("grade_distribution", {}).get(k, 0)
+        return {
+            "average_score": round(sum(scores) / len(scores), 1) if scores else None,
+            "total_assignments": total_assignments,
+            "grade_distribution": grade_dist,
+        }
+
+    # Advanced analytics
+    def aggregate_advanced_stats(stats_list, all_individual):
+        if not stats_list or not all_individual:
+            return None
+        scores = [s.get("average_score", 0) for s in stats_list if s]
+        highest = max([s.get("highest_score", 0) for s in stats_list if s], default=None)
+        lowest = min([s.get("lowest_score", 0) for s in stats_list if s], default=None)
+        total_submissions = sum([s.get("total_submissions", 0) for s in stats_list if s])
+
+        # Score distribution for histogram
+        all_scores = [r["score"] for r in all_individual if r["score"] is not None]
+        # Assignment dates for trend chart
+        assignment_dates = [r["date"] for r in all_individual if r["date"]]
+        # Rubric radar: average per criterion
+        rubric_totals = {}
+        rubric_counts = {}
+        for r in all_individual:
+            for criterion, val in r["rubric_scores"].items():
+                rubric_totals[criterion] = rubric_totals.get(criterion, 0) + val
+                rubric_counts[criterion] = rubric_counts.get(criterion, 0) + 1
+        rubric_averages = {k: round(rubric_totals[k]/rubric_counts[k], 1) for k in rubric_totals}
+
+        # AI feedback highlights
+        all_strengths = []
+        all_improvements = []
+        for r in all_individual:
+            all_strengths.extend(r.get("strengths", []))
+            all_improvements.extend(r.get("areas_for_improvement", []))
+        top_strengths = [s for s, _ in Counter(all_strengths).most_common(3)]
+        top_improvements = [s for s, _ in Counter(all_improvements).most_common(3)]
+
+        # Predictive analytics: forecast next score using linear regression
+        if len(assignment_dates) >= 2:
+            # Convert dates to ordinal for regression
+            dates_ord = [datetime.strptime(d, "%Y-%m-%d").toordinal() for d in assignment_dates]
+            scores_np = np.array(all_scores)
+            dates_np = np.array(dates_ord)
+            # Fit a simple linear trend
+            coef = np.polyfit(dates_np, scores_np, 1)
+            next_date = max(dates_np) + 7  # Predict one week after last assignment
+            predicted_score = int(np.polyval(coef, next_date))
+        else:
+            predicted_score = None
+
+        return {
+            "highest_score": highest,
+            "lowest_score": lowest,
+            "total_submissions": total_submissions,
+            "score_distribution": all_scores,
+            "assignment_dates": assignment_dates,
+            "rubric_averages": rubric_averages,
+            "top_strengths": top_strengths,
+            "top_improvements": top_improvements,
+            "predicted_score": predicted_score,
+        }
+
+    tier = (user.subscription_tier or "").lower()
+    show_basic_analytics = tier in ["educator", "professional", "institution"]
+    show_advanced_analytics = tier in ["professional", "institution"]
+
+    basic_analytics = aggregate_basic_stats(all_stats) if show_basic_analytics else None
+    advanced_analytics = aggregate_advanced_stats(all_stats, all_individual) if show_advanced_analytics else None
+
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
         "user": user,
-        "tasks": sorted(user_tasks, key=lambda x: x.created_at, reverse=True)[:10]
+        "assignments": recent_assignments,
+        "usage_summary": usage_summary,
+        "tier_configs": TIER_CONFIGS,
+        "basic_analytics": basic_analytics,
+        "advanced_analytics": advanced_analytics,
+        "show_basic_analytics": show_basic_analytics,
+        "show_advanced_analytics": show_advanced_analytics,
     })
 
 @app.post("/api/upload")
@@ -226,61 +351,57 @@ async def upload_files(
     assignment_file: UploadFile = File(...),
     student_submissions: List[UploadFile] = File(...),
     solution_file: Optional[UploadFile] = File(None),
-    custom_rubric: Optional[UploadFile] = File(None)
+    custom_rubric: Optional[UploadFile] = File(None),
+    db: Session = Depends(get_db)
 ):
     try:
-        user = require_auth(request)
+        user = require_auth(request, db)
         if isinstance(user, RedirectResponse):
             raise HTTPException(status_code=401, detail="Authentication required")
+        
         if not has_active_subscription(user):
             raise HTTPException(status_code=402, detail="Active subscription required")
         
-        # Validate subject
+        # Check if user can create assignment
+        can_create, message = subscription_service.can_create_assignment(user, db)
+        if not can_create:
+            raise HTTPException(status_code=402, detail=message)
+        
+        # Check subject access
+        can_use_subject, subject_message = subscription_service.can_use_subject(user, subject)
+        if not can_use_subject:
+            raise HTTPException(status_code=403, detail=subject_message)
+        
+        # Validate submissions count
+        valid_submissions = [s for s in student_submissions if s.filename]
+        can_process, submission_message = subscription_service.can_process_submissions(user, len(valid_submissions))
+        if not can_process:
+            raise HTTPException(status_code=403, detail=submission_message)
+        
+        # Validate input
         if subject not in VALID_SUBJECTS:
-            raise HTTPException(status_code=400, 
-                detail=f"Invalid subject. Must be one of: {', '.join(VALID_SUBJECTS)}")
+            raise HTTPException(status_code=400, detail=f"Invalid subject. Must be one of: {', '.join(VALID_SUBJECTS)}")
         
-        # Validate assessment type
         if assessment_type not in VALID_ASSESSMENT_TYPES:
-            raise HTTPException(status_code=400,
-                detail=f"Invalid assessment type. Must be one of: {', '.join(VALID_ASSESSMENT_TYPES)}")
+            raise HTTPException(status_code=400, detail=f"Invalid assessment type. Must be one of: {', '.join(VALID_ASSESSMENT_TYPES)}")
         
-        # Enhanced file validation
-        # Check assignment file
-        if not assignment_file or not hasattr(assignment_file, 'filename') or not assignment_file.filename:
+        # File validation
+        if not assignment_file or not assignment_file.filename:
             raise HTTPException(status_code=400, detail="Please select an assignment instructions file")
-            
-        # Check student submissions
-        if not student_submissions or len(student_submissions) == 0:
+        
+        if not valid_submissions:
             raise HTTPException(status_code=400, detail="Please select at least one student submission")
-            
-        # Validate that the first submission has a filename
-        if not hasattr(student_submissions[0], 'filename') or not student_submissions[0].filename:
-            raise HTTPException(status_code=400, detail="Please select valid student submission files")
-            
-        # Create all_files list with only valid files
-        all_files = [assignment_file]
         
-        # Add valid student submissions
-        for submission in student_submissions:
-            if hasattr(submission, 'filename') and submission.filename:
-                all_files.append(submission)
-        
-        # Add optional files if they have valid filenames
-        if solution_file and hasattr(solution_file, 'filename') and solution_file.filename:
+        # Check file extensions and sizes
+        all_files = [assignment_file] + valid_submissions
+        if solution_file and solution_file.filename:
             all_files.append(solution_file)
-        if custom_rubric and hasattr(custom_rubric, 'filename') and custom_rubric.filename:
+        if custom_rubric and custom_rubric.filename:
             all_files.append(custom_rubric)
         
-        # Validate each file
         for file in all_files:
-            # Check file extension
             if not file.filename.lower().endswith('.pdf'):
                 raise HTTPException(status_code=400, detail=f"Only PDF files allowed. '{file.filename}' is not a PDF")
-            
-            # Check file size (if size attribute is available)
-            if hasattr(file, 'size') and file.size and file.size > 10 * 1024 * 1024:
-                raise HTTPException(status_code=400, detail=f"File '{file.filename}' exceeds 10MB limit")
         
         # Create task
         task_id = str(uuid.uuid4())
@@ -290,83 +411,91 @@ async def upload_files(
         # Save files
         saved_files = {}
         
-        # Save assignment file
+        # Assignment file
         assignment_path = task_dir / f"assignment_{assignment_file.filename}"
         async with aiofiles.open(assignment_path, "wb") as f:
             content = await assignment_file.read()
             await f.write(content)
         saved_files["assignment"] = str(assignment_path)
         
-        # Save student submissions
+        # Student submissions
         submissions_dir = task_dir / "submissions"
         submissions_dir.mkdir(exist_ok=True)
         submission_paths = []
-        for i, submission in enumerate(student_submissions):
-            if hasattr(submission, 'filename') and submission.filename:
-                submission_path = submissions_dir / f"submission_{i+1}_{submission.filename}"
-                async with aiofiles.open(submission_path, "wb") as f:
-                    content = await submission.read()
-                    await f.write(content)
-                submission_paths.append(str(submission_path))
+        
+        for i, submission in enumerate(valid_submissions):
+            submission_path = submissions_dir / f"submission_{i+1}_{submission.filename}"
+            async with aiofiles.open(submission_path, "wb") as f:
+                content = await submission.read()
+                await f.write(content)
+            submission_paths.append(str(submission_path))
+        
         saved_files["submissions"] = submission_paths
         
-        # Save optional files
-        if solution_file and hasattr(solution_file, 'filename') and solution_file.filename:
+        # Optional files
+        if solution_file and solution_file.filename:
             solution_path = task_dir / f"solution_{solution_file.filename}"
             async with aiofiles.open(solution_path, "wb") as f:
                 content = await solution_file.read()
                 await f.write(content)
             saved_files["solution"] = str(solution_path)
         
-        if custom_rubric and hasattr(custom_rubric, 'filename') and custom_rubric.filename:
+        if custom_rubric and custom_rubric.filename:
+            # Check if user has custom rubrics feature
+            if not subscription_service.has_feature_access(user, "custom_rubrics"):
+                raise HTTPException(status_code=403, detail="Custom rubrics not available in your plan. Please upgrade to use this feature.")
+            
             rubric_path = task_dir / f"rubric_{custom_rubric.filename}"
             async with aiofiles.open(rubric_path, "wb") as f:
                 content = await custom_rubric.read()
                 await f.write(content)
             saved_files["rubric"] = str(rubric_path)
         
-        # Create task record
+        # Create assignment record
+        assignment = Assignment(
+            id=task_id,
+            user_id=user.id,
+            subject=subject,
+            assessment_type=assessment_type,
+            submissions_count=len(submission_paths),
+            assignment_file_path=saved_files["assignment"],
+            solution_file_path=saved_files.get("solution"),
+            rubric_file_path=saved_files.get("rubric")
+        )
+        
+        db.add(assignment)
+        db.commit()
+        
+        # Increment usage counter
+        subscription_service.increment_assignment_usage(user, db)
+        
+        # Create task data for processing
         task_data = {
             "task_id": task_id,
             "subject": subject,
             "assessment_type": assessment_type,
             "status": "processing",
             "created_at": datetime.now().isoformat(),
-            "user_id": user.get("id"),
+            "user_id": user.id,
             "files": saved_files
         }
         
-        # Save task metadata
         await save_task_metadata(task_id, task_data)
         
-        # Create GradingTask object
-        grading_task = GradingTask(
-            task_id=task_id,
-            subject=subject,
-            assessment_type=assessment_type,
-            status="processing",
-            created_at=datetime.now(),
-            user_id=user.get("id"),
-            files=saved_files
-        )
-        tasks_storage[task_id] = grading_task
+        # Start processing in background
+        background_tasks.add_task(process_grading_task, task_id, db)
         
-        # Start grading process in background
-        background_tasks.add_task(process_grading_task, task_id)
-        
-        # FIXED: Redirect to dashboard with success message instead of returning JSON
         return RedirectResponse(
-            url=f"/dashboard?task_id={task_id}&status=upload_success", 
-            status_code=303  
+            url=f"/dashboard?task_id={task_id}&status=upload_success",
+            status_code=303
         )
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Upload error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Upload failed. Please try again.")
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
-async def process_grading_task(task_id: str):
+async def process_grading_task(task_id: str, db: Session):
     """Process grading task using Perplexity API via grader.py"""
     try:
         # Load task data
@@ -374,55 +503,68 @@ async def process_grading_task(task_id: str):
         if not task_data:
             return
         
-        # Update status to indicate processing has started
-        if task_id in tasks_storage:
-            tasks_storage[task_id].status = "processing"
+        # Get assignment record
+        assignment = db.query(Assignment).filter(Assignment.id == task_id).first()
+        if not assignment:
+            return
+        
+        # Update status
+        assignment.status = "processing"
+        db.commit()
         
         # Use the grader
         results = await grader.grade_assignment(task_data)
         
-        # Update task with results
-        task_data["status"] = results.get("status", "completed")
-        task_data["results"] = results
-        await save_task_metadata(task_id, task_data)
+        # Update assignment with results
+        assignment.status = results.get("status", "completed")
+        assignment.results = results
+        assignment.reports_zip_path = results.get("reports_zip_path")
+        assignment.completed_at = datetime.now()
         
-        if task_id in tasks_storage:
-            tasks_storage[task_id].status = results.get("status", "completed")
-            tasks_storage[task_id].results = results
+        if results.get("status") == "error":
+            assignment.error_message = results.get("error", "Unknown error")
+        
+        db.commit()
+        
+        # Record usage
+        user = db.query(User).filter(User.id == assignment.user_id).first()
+        if user:
+            subscription_service.record_usage(
+                user, "assignment_completed", db,
+                resource_used=task_id,
+                metadata={"submissions_count": assignment.submissions_count}
+            )
+        
     except Exception as e:
         # Handle errors
         try:
-            task_data = await load_task_metadata(task_id)
-            if task_data:
-                task_data["status"] = "error"
-                task_data["error"] = str(e)
-                await save_task_metadata(task_id, task_data)
-            
-            if task_id in tasks_storage:
-                tasks_storage[task_id].status = "error"
-                tasks_storage[task_id].error = str(e)
+            assignment = db.query(Assignment).filter(Assignment.id == task_id).first()
+            if assignment:
+                assignment.status = "error"
+                assignment.error_message = str(e)
+                db.commit()
         except:
             pass
 
 @app.get("/api/download-reports/{task_id}")
-async def download_reports(task_id: str, request: Request, background_tasks: BackgroundTasks):
-    user = require_auth(request)
+async def download_reports(task_id: str, request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    user = require_auth(request, db)
     if isinstance(user, RedirectResponse):
         raise HTTPException(status_code=401, detail="Authentication required")
     
-    # Load task metadata to verify ownership
-    task_data = await load_task_metadata(task_id)
-    if not task_data:
-        raise HTTPException(status_code=404, detail="Task not found")
-    if task_data.get("user_id") != user.get("id"):
+    # Get assignment and verify ownership
+    assignment = db.query(Assignment).filter(Assignment.id == task_id).first()
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+    
+    if assignment.user_id != user.id:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    # Check if reports ZIP exists
-    zip_path = Path(f"uploads/{task_id}/all_reports.zip")
-    if not zip_path.exists():
+    # Check reports ZIP path
+    if not assignment.reports_zip_path or not Path(assignment.reports_zip_path).exists():
         raise HTTPException(status_code=404, detail="Reports not available")
     
-    # Schedule cleanup after response is sent
+    # Schedule cleanup after response
     def cleanup():
         try:
             shutil.rmtree(f"uploads/{task_id}")
@@ -431,67 +573,88 @@ async def download_reports(task_id: str, request: Request, background_tasks: Bac
             print(f"✗ Error cleaning up uploads/{task_id}: {e}")
     
     background_tasks.add_task(cleanup)
-    return FileResponse(zip_path, filename=f"reports_{task_id}.zip")
+    
+    return FileResponse(assignment.reports_zip_path, filename=f"reports_{task_id}.zip")
 
 @app.get("/api/task/{task_id}")
-async def get_task_status(task_id: str, request: Request):
-    user = require_auth(request)
+async def get_task_status(task_id: str, request: Request, db: Session = Depends(get_db)):
+    user = require_auth(request, db)
     if isinstance(user, RedirectResponse):
         raise HTTPException(status_code=401, detail="Authentication required")
     
-    task_data = await load_task_metadata(task_id)
-    if not task_data:
-        raise HTTPException(status_code=404, detail="Task not found")
+    assignment = db.query(Assignment).filter(Assignment.id == task_id).first()
+    if not assignment:
+        raise HTTPException(status_code=404, detail="Assignment not found")
     
-    # Check if user owns this task
-    if task_data.get("user_id") != user.get("id"):
+    if assignment.user_id != user.id:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    return task_data
+    return {
+        "task_id": assignment.id,
+        "status": assignment.status,
+        "subject": assignment.subject,
+        "assessment_type": assignment.assessment_type,
+        "submissions_count": assignment.submissions_count,
+        "created_at": assignment.created_at.isoformat(),
+        "completed_at": assignment.completed_at.isoformat() if assignment.completed_at else None,
+        "results": assignment.results,
+        "error_message": assignment.error_message
+    }
 
+# Subscription Management Routes
 @app.post("/api/create-checkout-session")
-async def create_checkout_session(request: Request, plan: str = Form(...)):
-    user = get_current_user(request)
+async def create_checkout_session(
+    request: Request,
+    plan: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    user = require_auth(request, db)
+    if isinstance(user, RedirectResponse):
+        raise HTTPException(status_code=401, detail="Authentication required")
+    
     price_ids = {
-        "standard": PRICE_ID_STANDARD,
-        "pro": PRICE_ID_PRO,
-        "enterprise": PRICE_ID_ENTERPRISE
+        "educator": PRICE_ID_EDUCATOR,
+        "professional": PRICE_ID_PROFESSIONAL,
+        "institution": PRICE_ID_INSTITUTION
     }
     
-    if plan not in price_ids:
-        raise HTTPException(status_code=400, detail="Invalid plan")
+    if plan not in price_ids or not price_ids[plan]:
+        raise HTTPException(status_code=400, detail="Invalid plan or price not configured")
     
     try:
-        session = stripe.checkout.Session.create(
-            payment_method_types=["card"],
-            mode="subscription",
-            line_items=[{
-                "price": price_ids[plan],
-                "quantity": 1,
-            }],
-            success_url=request.url_for("success") + "?session_id={CHECKOUT_SESSION_ID}",
-            cancel_url=request.url_for("pricing"),
-            client_reference_id=user.get("id") if user else None,
-        )
-        return {"checkout_url": session.url}
+        checkout_url = await subscription_service.create_checkout_session(user, price_ids[plan], db)
+        return {"checkout_url": checkout_url}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-@app.get("/success", response_class=HTMLResponse)
-async def success(request: Request, session_id: Optional[str] = None):
-    return templates.TemplateResponse("success.html", {
-        "request": request,
-        "session_id": session_id
-    })
+@app.get("/api/create-customer-portal-session")
+async def create_customer_portal_session(request: Request, db: Session = Depends(get_db)):
+    user = require_auth(request, db)
+    if isinstance(user, RedirectResponse):
+        raise HTTPException(status_code=401, detail="Authentication required")
+    
+    try:
+        portal_url = await subscription_service.create_customer_portal_session(user, db)
+        return RedirectResponse(url=portal_url, status_code=303)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.get("/api/usage-summary")
+async def get_usage_summary(request: Request, db: Session = Depends(get_db)):
+    user = require_auth(request, db)
+    if isinstance(user, RedirectResponse):
+        raise HTTPException(status_code=401, detail="Authentication required")
+    
+    return subscription_service.get_usage_summary(user, db)
 
 @app.post("/webhook")
-async def stripe_webhook(request: Request):
+async def stripe_webhook(request: Request, db: Session = Depends(get_db), stripe_signature: str = Header(None)):
+    """Handle Stripe webhook events"""
     payload = await request.body()
-    sig_header = request.headers.get("stripe-signature")
     
     try:
         event = stripe.Webhook.construct_event(
-            payload, sig_header, STRIPE_WEBHOOK_SECRET
+            payload, stripe_signature, STRIPE_WEBHOOK_SECRET
         )
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid payload")
@@ -499,13 +662,19 @@ async def stripe_webhook(request: Request):
         raise HTTPException(status_code=400, detail="Invalid signature")
     
     # Handle the event
-    if event["type"] == "checkout.session.completed":
-        session = event["data"]["object"]
-        # Update user subscription status
-        # Implementation depends on your user management system
-        pass
+    success = subscription_service.handle_subscription_webhook(event, db)
     
-    return {"status": "success"}
+    if success:
+        return {"status": "success"}
+    else:
+        raise HTTPException(status_code=500, detail="Webhook processing failed")
+
+@app.get("/success", response_class=HTMLResponse)
+async def success(request: Request, session_id: Optional[str] = None):
+    return templates.TemplateResponse("success.html", {
+        "request": request,
+        "session_id": session_id
+    })
 
 # Authentication routes
 @app.post("/auth/login")
@@ -516,14 +685,20 @@ async def login(
     db: Session = Depends(get_db)
 ):
     user = db.query(User).filter(User.email == email).first()
+    
     if user and user.password_hash == hashlib.sha256(password.encode()).hexdigest():
         request.session["user"] = {
             "id": user.id,
             "email": user.email,
+            "subscription_tier": user.subscription_tier,
             "subscription_status": user.subscription_status
         }
         return RedirectResponse(url="/dashboard", status_code=303)
-    return templates.TemplateResponse("index.html", {"request": request, "login_error": "Invalid credentials"})
+    
+    return templates.TemplateResponse("index.html", {
+        "request": request, 
+        "login_error": "Invalid credentials"
+    })
 
 @app.post("/auth/logout")
 async def logout(request: Request):
@@ -542,9 +717,11 @@ async def register(
     email: str = Form(...),
     password: str = Form(...),
     confirm_password: str = Form(...),
+    full_name: str = Form(...),
     db: Session = Depends(get_db)
 ):
     errors = []
+    
     if password != confirm_password:
         errors.append("Passwords do not match")
     if len(password) < 8:
@@ -553,15 +730,23 @@ async def register(
         errors.append("Email already registered")
     
     if errors:
-        return templates.TemplateResponse("register.html", {"request": request, "errors": errors})
+        return templates.TemplateResponse("register.html", {
+            "request": request, 
+            "errors": errors
+        })
     
+    # Create user with trial period
     password_hash = hashlib.sha256(password.encode()).hexdigest()
+    trial_end = datetime.now() + timedelta(days=7)
+    
     user = User(
         id=str(uuid.uuid4()),
         email=email,
         password_hash=password_hash,
-        subscription_status="trial",
-        created_at=datetime.now()
+        full_name=full_name,
+        subscription_tier=SubscriptionTier.TRIAL.value,
+        subscription_status=SubscriptionStatus.TRIALING.value,
+        trial_end=trial_end
     )
     
     db.add(user)
@@ -571,10 +756,11 @@ async def register(
     request.session["user"] = {
         "id": user.id,
         "email": user.email,
+        "subscription_tier": user.subscription_tier,
         "subscription_status": user.subscription_status
     }
     
-    return RedirectResponse(url="/pricing", status_code=303)
+    return RedirectResponse(url="/dashboard", status_code=303)
 
 # Health check
 @app.get("/health")
@@ -583,4 +769,5 @@ async def health_check():
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
 

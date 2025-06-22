@@ -1,0 +1,472 @@
+# ScoreWise AI - Subscription Management Service
+import os
+import stripe
+import logging
+from datetime import datetime, timedelta
+from typing import Optional, Dict, List, Any
+from sqlalchemy.orm import Session
+from sqlalchemy import and_
+
+from models import (
+    User, Assignment, UsageRecord, SubscriptionEvent, 
+    SubscriptionTier, SubscriptionStatus, TIER_CONFIGS
+)
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Configure Stripe
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+
+class SubscriptionService:
+    """Service for managing user subscriptions and enforcing tier limits"""
+    
+    def __init__(self):
+        self.tier_configs = TIER_CONFIGS
+    
+    def get_user_tier_config(self, user: User) -> Dict[str, Any]:
+        """Get the configuration for a user's current tier"""
+        return self.tier_configs.get(user.subscription_tier, self.tier_configs[SubscriptionTier.TRIAL.value])
+    
+    def has_feature_access(self, user: User, feature_name: str) -> bool:
+        """Check if user has access to a specific feature"""
+        config = self.get_user_tier_config(user)
+        features = config.get("features", {})
+        
+        if feature_name not in features:
+            return False
+            
+        feature_value = features[feature_name]
+        
+        # Handle boolean features
+        if isinstance(feature_value, bool):
+            return feature_value
+        
+        # Handle string features (like analytics levels)
+        if isinstance(feature_value, str):
+            return feature_value != "none" and feature_value != ""
+        
+        return False
+    
+    def get_monthly_assignment_limit(self, user: User) -> int:
+        """Get the monthly assignment limit for a user"""
+        config = self.get_user_tier_config(user)
+        limit = config.get("assignments_per_month", 0)
+        
+        if limit == "unlimited":
+            return float('inf')
+        
+        return int(limit)
+    
+    def get_submissions_per_assignment_limit(self, user: User) -> int:
+        """Get the submissions per assignment limit for a user"""
+        config = self.get_user_tier_config(user)
+        limit = config.get("submissions_per_assignment", 0)
+        
+        if limit == "unlimited":
+            return float('inf')
+        
+        return int(limit)
+    
+    def get_allowed_subjects(self, user: User) -> List[str]:
+        """Get the list of subjects a user can access"""
+        config = self.get_user_tier_config(user)
+        subjects = config.get("subjects", [])
+        
+        if subjects == "all":
+            # Return all available subjects
+            return [
+                "algebra", "biology", "calculus", "chemistry", "engineering", "physics",
+                "english_literature", "history", "philosophy", "creative_writing",
+                "psychology", "economics", "sociology", "political_science",
+                "music_theory", "art_history", "creative_arts", "drama",
+                "spanish", "french", "german", "chinese", "japanese"
+            ]
+        
+        return subjects if isinstance(subjects, list) else []
+    
+    def can_create_assignment(self, user: User, db: Session) -> tuple[bool, str]:
+        """Check if user can create a new assignment this month"""
+        # Reset usage counter if month has changed
+        self._reset_monthly_usage_if_needed(user, db)
+        
+        monthly_limit = self.get_monthly_assignment_limit(user)
+        
+        if monthly_limit == float('inf'):
+            return True, ""
+        
+        if user.assignments_this_month >= monthly_limit:
+            config = self.get_user_tier_config(user)
+            return False, f"Monthly assignment limit of {monthly_limit} reached for {config['name']} plan. Please upgrade to continue."
+        
+        return True, ""
+    
+    def can_process_submissions(self, user: User, submission_count: int) -> tuple[bool, str]:
+        """Check if user can process the given number of submissions"""
+        submissions_limit = self.get_submissions_per_assignment_limit(user)
+        
+        if submissions_limit == float('inf'):
+            return True, ""
+        
+        if submission_count > submissions_limit:
+            config = self.get_user_tier_config(user)
+            return False, f"Submission limit of {submissions_limit} per assignment exceeded for {config['name']} plan. You submitted {submission_count} files."
+        
+        return True, ""
+    
+    def can_use_subject(self, user: User, subject: str) -> tuple[bool, str]:
+        """Check if user can use a specific subject"""
+        allowed_subjects = self.get_allowed_subjects(user)
+        
+        if subject in allowed_subjects:
+            return True, ""
+        
+        config = self.get_user_tier_config(user)
+        if config['name'] == "Free Trial":
+            return False, "Subject access limited to STEM subjects in Free Trial. Please upgrade to access all subjects."
+        
+        return False, f"Subject '{subject}' not available in {config['name']} plan."
+    
+    def increment_assignment_usage(self, user: User, db: Session) -> None:
+        """Increment the user's assignment usage counter"""
+        self._reset_monthly_usage_if_needed(user, db)
+        
+        user.assignments_this_month += 1
+        db.commit()
+        
+        # Record usage event
+        self.record_usage(user, "assignment_created", db)
+    
+    def record_usage(self, user: User, event_type: str, db: Session, 
+                    resource_used: Optional[str] = None, quantity: int = 1, 
+                    metadata: Optional[Dict] = None) -> None:
+        """Record a usage event"""
+        usage_record = UsageRecord(
+            id=f"usage_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{user.id}_{event_type}",
+            user_id=user.id,
+            event_type=event_type,
+            resource_used=resource_used,
+            quantity=quantity,
+            tier_at_time=user.subscription_tier,
+            metadata=metadata or {}
+        )
+        
+        db.add(usage_record)
+        db.commit()
+    
+    def _reset_monthly_usage_if_needed(self, user: User, db: Session) -> None:
+        """Reset monthly usage counters if the month has changed"""
+        now = datetime.now()
+        
+        # Check if we need to reset (different month or year)
+        if (user.usage_reset_date.month != now.month or 
+            user.usage_reset_date.year != now.year):
+            
+            user.assignments_this_month = 0
+            user.usage_reset_date = now
+            db.commit()
+    
+    def get_usage_summary(self, user: User, db: Session) -> Dict[str, Any]:
+        """Get usage summary for a user"""
+        self._reset_monthly_usage_if_needed(user, db)
+        
+        config = self.get_user_tier_config(user)
+        monthly_limit = config.get("assignments_per_month", 0)
+        
+        # Calculate assignments this month from database if needed
+        month_start = datetime(datetime.now().year, datetime.now().month, 1)
+        assignments_count = db.query(Assignment).filter(
+            and_(
+                Assignment.user_id == user.id,
+                Assignment.created_at >= month_start
+            )
+        ).count()
+        
+        # Update user record if it's out of sync
+        if assignments_count != user.assignments_this_month:
+            user.assignments_this_month = assignments_count
+            db.commit()
+        
+        return {
+            "tier": config["name"],
+            "assignments_used": user.assignments_this_month,
+            "assignments_limit": monthly_limit if monthly_limit != "unlimited" else "Unlimited",
+            "assignments_remaining": (monthly_limit - user.assignments_this_month) if monthly_limit != "unlimited" else "Unlimited",
+            "submissions_per_assignment_limit": config.get("submissions_per_assignment", 0),
+            "period_start": user.current_period_start,
+            "period_end": user.current_period_end,
+            "status": user.subscription_status,
+            "features": config.get("features", {}),
+            "allowed_subjects": self.get_allowed_subjects(user)
+        }
+    
+    async def create_stripe_customer(self, user: User, db: Session) -> str:
+        """Create a Stripe customer for the user"""
+        if user.stripe_customer_id:
+            return user.stripe_customer_id
+        
+        try:
+            customer = stripe.Customer.create(
+                email=user.email,
+                name=user.full_name,
+                metadata={
+                    "user_id": user.id,
+                    "platform": "scorewise_ai"
+                }
+            )
+            
+            user.stripe_customer_id = customer.id
+            db.commit()
+            
+            logger.info(f"✓ Created Stripe customer {customer.id} for user {user.id}")
+            return customer.id
+            
+        except Exception as e:
+            logger.error(f"Error creating Stripe customer: {str(e)}")
+            raise
+    
+    async def create_checkout_session(self, user: User, price_id: str, db: Session) -> str:
+        """Create a Stripe checkout session for subscription"""
+        await self.create_stripe_customer(user, db)
+        
+        try:
+            session = stripe.checkout.Session.create(
+                customer=user.stripe_customer_id,
+                payment_method_types=["card"],
+                mode="subscription",
+                line_items=[{
+                    "price": price_id,
+                    "quantity": 1,
+                }],
+                success_url=f"{os.getenv('BASE_URL', 'http://localhost:8000')}/success?session_id={{CHECKOUT_SESSION_ID}}",
+                cancel_url=f"{os.getenv('BASE_URL', 'http://localhost:8000')}/pricing",
+                metadata={
+                    "user_id": user.id
+                },
+                subscription_data={
+                    "metadata": {
+                        "user_id": user.id
+                    }
+                }
+            )
+            
+            return session.url
+            
+        except Exception as e:
+            logger.error(f"Error creating checkout session: {str(e)}")
+            raise
+    
+    async def create_customer_portal_session(self, user: User, db: Session) -> str:
+        """Create a Stripe customer portal session"""
+        if not user.stripe_customer_id:
+            await self.create_stripe_customer(user, db)
+        
+        try:
+            session = stripe.billing_portal.Session.create(
+                customer=user.stripe_customer_id,
+                return_url=f"{os.getenv('BASE_URL', 'http://localhost:8000')}/dashboard"
+            )
+            
+            return session.url
+            
+        except Exception as e:
+            logger.error(f"Error creating customer portal session: {str(e)}")
+            raise
+    
+    def handle_subscription_webhook(self, event: Dict[str, Any], db: Session) -> bool:
+        """Handle subscription-related webhook events from Stripe"""
+        try:
+            event_type = event["type"]
+            event_data = event["data"]["object"]
+            
+            # Record the event
+            subscription_event = SubscriptionEvent(
+                id=f"evt_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{event['id']}",
+                stripe_event_id=event["id"],
+                event_type=event_type,
+                stripe_created=datetime.fromtimestamp(event["created"]),
+                processed=False
+            )
+            
+            db.add(subscription_event)
+            db.commit()
+            
+            # Handle different event types
+            if event_type == "customer.subscription.created":
+                return self._handle_subscription_created(event_data, subscription_event, db)
+            elif event_type == "customer.subscription.updated":
+                return self._handle_subscription_updated(event_data, subscription_event, db)
+            elif event_type == "customer.subscription.deleted":
+                return self._handle_subscription_deleted(event_data, subscription_event, db)
+            elif event_type == "invoice.payment_succeeded":
+                return self._handle_payment_succeeded(event_data, subscription_event, db)
+            elif event_type == "invoice.payment_failed":
+                return self._handle_payment_failed(event_data, subscription_event, db)
+            
+            subscription_event.processed = True
+            subscription_event.processed_at = datetime.now()
+            db.commit()
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error handling webhook: {str(e)}")
+            if 'subscription_event' in locals():
+                subscription_event.error_message = str(e)
+                db.commit()
+            return False
+    
+    def _handle_subscription_created(self, subscription_data: Dict, event: SubscriptionEvent, db: Session) -> bool:
+        """Handle subscription creation"""
+        customer_id = subscription_data["customer"]
+        user = db.query(User).filter(User.stripe_customer_id == customer_id).first()
+        
+        if not user:
+            logger.error(f"User not found for customer {customer_id}")
+            return False
+        
+        # Determine tier from price ID
+        price_id = subscription_data["items"]["data"][0]["price"]["id"]
+        tier = self._get_tier_from_price_id(price_id)
+        
+        if not tier:
+            logger.error(f"Unknown price ID: {price_id}")
+            return False
+        
+        old_tier = user.subscription_tier
+        
+        # Update user subscription
+        user.subscription_tier = tier
+        user.subscription_status = subscription_data["status"]
+        user.stripe_subscription_id = subscription_data["id"]
+        user.current_period_start = datetime.fromtimestamp(subscription_data["current_period_start"])
+        user.current_period_end = datetime.fromtimestamp(subscription_data["current_period_end"])
+        
+        # Record the change
+        event.user_id = user.id
+        event.old_tier = old_tier
+        event.new_tier = tier
+        event.new_status = subscription_data["status"]
+        
+        db.commit()
+        
+        logger.info(f"✓ Subscription created for user {user.id}: {tier}")
+        return True
+    
+    def _handle_subscription_updated(self, subscription_data: Dict, event: SubscriptionEvent, db: Session) -> bool:
+        """Handle subscription updates"""
+        subscription_id = subscription_data["id"]
+        user = db.query(User).filter(User.stripe_subscription_id == subscription_id).first()
+        
+        if not user:
+            logger.error(f"User not found for subscription {subscription_id}")
+            return False
+        
+        old_tier = user.subscription_tier
+        old_status = user.subscription_status
+        
+        # Determine new tier from price ID
+        price_id = subscription_data["items"]["data"][0]["price"]["id"]
+        tier = self._get_tier_from_price_id(price_id)
+        
+        if tier:
+            user.subscription_tier = tier
+        
+        user.subscription_status = subscription_data["status"]
+        user.current_period_start = datetime.fromtimestamp(subscription_data["current_period_start"])
+        user.current_period_end = datetime.fromtimestamp(subscription_data["current_period_end"])
+        
+        # Record the change
+        event.user_id = user.id
+        event.old_tier = old_tier
+        event.new_tier = tier or user.subscription_tier
+        event.old_status = old_status
+        event.new_status = subscription_data["status"]
+        
+        db.commit()
+        
+        logger.info(f"✓ Subscription updated for user {user.id}: {user.subscription_tier} ({user.subscription_status})")
+        return True
+    
+    def _handle_subscription_deleted(self, subscription_data: Dict, event: SubscriptionEvent, db: Session) -> bool:
+        """Handle subscription cancellation"""
+        subscription_id = subscription_data["id"]
+        user = db.query(User).filter(User.stripe_subscription_id == subscription_id).first()
+        
+        if not user:
+            logger.error(f"User not found for subscription {subscription_id}")
+            return False
+        
+        old_tier = user.subscription_tier
+        old_status = user.subscription_status
+        
+        # Downgrade to trial
+        user.subscription_tier = SubscriptionTier.TRIAL.value
+        user.subscription_status = SubscriptionStatus.CANCELED.value
+        user.stripe_subscription_id = None
+        user.current_period_start = None
+        user.current_period_end = None
+        
+        # Record the change
+        event.user_id = user.id
+        event.old_tier = old_tier
+        event.new_tier = SubscriptionTier.TRIAL.value
+        event.old_status = old_status
+        event.new_status = SubscriptionStatus.CANCELED.value
+        
+        db.commit()
+        
+        logger.info(f"✓ Subscription canceled for user {user.id}")
+        return True
+    
+    def _handle_payment_succeeded(self, invoice_data: Dict, event: SubscriptionEvent, db: Session) -> bool:
+        """Handle successful payment"""
+        subscription_id = invoice_data.get("subscription")
+        if not subscription_id:
+            return True  # Not a subscription invoice
+        
+        user = db.query(User).filter(User.stripe_subscription_id == subscription_id).first()
+        if not user:
+            return False
+        
+        # Ensure subscription is active
+        if user.subscription_status != SubscriptionStatus.ACTIVE.value:
+            user.subscription_status = SubscriptionStatus.ACTIVE.value
+            db.commit()
+        
+        event.user_id = user.id
+        logger.info(f"✓ Payment succeeded for user {user.id}")
+        return True
+    
+    def _handle_payment_failed(self, invoice_data: Dict, event: SubscriptionEvent, db: Session) -> bool:
+        """Handle failed payment"""
+        subscription_id = invoice_data.get("subscription")
+        if not subscription_id:
+            return True  # Not a subscription invoice
+        
+        user = db.query(User).filter(User.stripe_subscription_id == subscription_id).first()
+        if not user:
+            return False
+        
+        old_status = user.subscription_status
+        user.subscription_status = SubscriptionStatus.PAST_DUE.value
+        
+        event.user_id = user.id
+        event.old_status = old_status
+        event.new_status = SubscriptionStatus.PAST_DUE.value
+        
+        db.commit()
+        
+        logger.warning(f"⚠️ Payment failed for user {user.id}")
+        return True
+    
+    def _get_tier_from_price_id(self, price_id: str) -> Optional[str]:
+        """Get subscription tier from Stripe price ID"""
+        for tier, config in self.tier_configs.items():
+            if config.get("stripe_price_id") == price_id:
+                return tier
+        return None
+
+# Global subscription service instance
+subscription_service = SubscriptionService()

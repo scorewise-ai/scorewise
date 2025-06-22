@@ -64,11 +64,9 @@ class PDFReport(FPDF):
 
 class ScoreWiseGrader:
     # Save the word list (one word per line) as english_words.txt in your project directory
-    def load_word_set(filepath="words.txt"):
+    def load_word_set(self, filepath="words.txt"):
         with open(filepath, "r") as f:
             return set(word.strip().lower() for word in f if word.strip())
-
-    COMMON_ENGLISH_WORDS = load_word_set()
 
     def get_poppler_path():
         if platform.system() == "Windows":
@@ -81,6 +79,7 @@ class ScoreWiseGrader:
         self.handwriting_ocr_key = HANDWRITING_OCR_API_KEY
         self.handwriting_ocr_url = HANDWRITING_OCR_API_URL
         self.default_rubrics = self._initialize_rubrics()
+        self.COMMON_ENGLISH_WORDS = self.load_word_set()
     
     def _initialize_rubrics(self):
         # Comprehensive rubric system covering all subjects and assessment types
@@ -330,7 +329,7 @@ class ScoreWiseGrader:
         words = re.findall(r'\b[a-zA-Z]{2,}\b', text)
         if not words:
             return 0.0
-        valid = sum(1 for w in words if w.lower() in COMMON_ENGLISH_WORDS)
+        valid = sum(1 for w in words if w.lower() in self.COMMON_ENGLISH_WORDS)
         return valid / len(words)
 
     def _calculate_garbled_ratio(self, text: str) -> float:
