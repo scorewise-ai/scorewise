@@ -772,6 +772,7 @@ async def register(
     password: str = Form(...),
     confirm_password: str = Form(...),
     full_name: str = Form(...),
+    invitation_code: str = Form(None),
     db: Session = Depends(get_db)
 ):
     errors = []
@@ -886,7 +887,8 @@ async def admin_invitations(request: Request, db: Session = Depends(get_db)):
     return templates.TemplateResponse("admin_invitations.html", {
         "request": request,
         "user": user,
-        "codes": codes
+        "codes": codes,
+        "now": datetime.now()  
     })
 
 @app.post("/admin/generate-invitation")
