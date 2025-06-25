@@ -52,6 +52,7 @@ class User(Base):
     # Relationships
     assignments = relationship("Assignment", back_populates="user", cascade="all, delete-orphan")
     usage_records = relationship("UsageRecord", back_populates="user", cascade="all, delete-orphan")
+    beta_profile = relationship("BetaTester", back_populates="user", uselist=False)
 
 class Assignment(Base):
     __tablename__ = "assignments"
@@ -185,6 +186,34 @@ class FeatureFlag(Base):
     created_at = Column(DateTime, default=func.now(), nullable=False)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
 
+class InvitationCode(Base):
+    __tablename__ = "invitation_codes"
+    
+    id = Column(String, primary_key=True, index=True)
+    code = Column(String(50), unique=True, index=True, nullable=False)
+    email = Column(String(255), nullable=True)  # Optional: restrict to specific email
+    max_uses = Column(Integer, default=1)
+    current_uses = Column(Integer, default=0)
+    expires_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=func.now())
+    is_active = Column(Boolean, default=True)
+    created_by_admin = Column(String, nullable=True)  # Admin who created it
+    beta_tier = Column(String, default="beta", nullable=False)  # What tier to assign
+
+class BetaTester(Base):
+    __tablename__ = "beta_testers"
+    
+    id = Column(String, primary_key=True, index=True)
+    user_id = Column(String, ForeignKey("users.id"))
+    invitation_code = Column(String(50))
+    access_expires = Column(DateTime)
+    created_at = Column(DateTime, default=func.now())
+    
+    # Relationships
+    user = relationship("User", back_populates="beta_profile")
+
+SubscriptionTier.BETA = "beta"  # Add beta testers
+
 # Subscription Tier Configurations
 TIER_CONFIGS = {
     SubscriptionTier.TRIAL.value: {
@@ -202,7 +231,7 @@ TIER_CONFIGS = {
             "email_support": True
         },
         "price_monthly": 0,
-        "trial_days": 14
+        "trial_days": 7
     },
     SubscriptionTier.EDUCATOR.value: {
         "name": "Educator Plan",
@@ -219,8 +248,9 @@ TIER_CONFIGS = {
             "email_support": True,
             "phone_support": False
         },
-        "price_monthly": 29,
-        "stripe_price_id": "price_educator_monthly"  # To be replaced with actual Stripe price ID
+        "price_monthly": 19,
+        "stripe_price_id_monthly": None,  # Patched at runtime from env
+        "stripe_price_id_annual": None,  # Patched at runtime from env
     },
     SubscriptionTier.PROFESSIONAL.value: {
         "name": "Professional Plan",
@@ -238,8 +268,9 @@ TIER_CONFIGS = {
             "phone_support": True,
             "bulk_upload": True
         },
-        "price_monthly": 99,
-        "stripe_price_id": "price_professional_monthly"  # To be replaced with actual Stripe price ID
+        "price_monthly": 49,
+        "stripe_price_id_monthly": None,  # Patched at runtime from env
+        "stripe_price_id_annual": None,  # Patched at runtime from env
     },
     SubscriptionTier.INSTITUTION.value: {
         "name": "Institution Plan",
@@ -260,7 +291,27 @@ TIER_CONFIGS = {
             "white_label": True,
             "dedicated_support": True
         },
-        "price_monthly": 299,
-        "stripe_price_id": "price_institution_monthly"  # To be replaced with actual Stripe price ID
+        "price_monthly": 199,
+        "stripe_price_id_monthly": None,  # Patched at runtime from env
+        "stripe_price_id_annual": None,  # Patched at runtime from env
+    },
+    "beta": {
+        "name": "Beta Tester",
+        "assignments_per_month": 50,  # Generous for testing
+        "submissions_per_assignment": 30,
+        "subjects": "all",
+        "features": {
+            "ocr": True,
+            "custom_rubrics": True,
+            "analytics": "advanced",
+            "priority_processing": True,
+            "api_access": False,
+            "export_reports": True,
+            "email_support": True,
+            "phone_support": False,
+            "beta_features": True  # Special beta feature access
+        },
+        "price_monthly": 0,  # Free for beta testers
+        "beta_access_days": 30  # 30-day beta access
     }
 }

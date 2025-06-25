@@ -156,6 +156,34 @@ def migrate_database():
                     ALTER TABLE users ADD COLUMN updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP NOT NULL;
                 END IF;
             END $$;
+            """,
+            # --- Invitation Codes and Beta Testers ---
+            """
+            CREATE TABLE IF NOT EXISTS invitation_codes (
+                id VARCHAR PRIMARY KEY,
+                code VARCHAR(50) UNIQUE NOT NULL,
+                email VARCHAR(255),
+                max_uses INTEGER DEFAULT 1,
+                current_uses INTEGER DEFAULT 0,
+                expires_at TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                is_active BOOLEAN DEFAULT TRUE,
+                created_by_admin VARCHAR,
+                beta_tier VARCHAR DEFAULT 'beta'
+            );
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS beta_testers (
+                id VARCHAR PRIMARY KEY,
+                user_id VARCHAR REFERENCES users(id),
+                invitation_code VARCHAR(50),
+                access_expires TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+            """,
+            """
+            CREATE INDEX IF NOT EXISTS idx_invitation_codes_code ON invitation_codes(code);
+            CREATE INDEX IF NOT EXISTS idx_beta_testers_user_id ON beta_testers(user_id);
             """
         ]
         

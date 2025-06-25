@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin - Invitation Codes | ScoreWise AI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-50">
+    <div class="max-w-6xl mx-auto p-6">
+        <div class="bg-white rounded-lg shadow p-6 mb-6">
+            <h1 class="text-2xl font-bold mb-6">Beta Invitation Codes</h1>
+            
+            <!-- Generate New Code Form -->
+            <div class="bg-blue-50 p-4 rounded-lg mb-6">
+                <h2 class="text-lg font-semibold mb-4">Generate New Invitation Code</h2>
+                <form method="POST" action="/admin/generate-invitation" class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Email (Optional)</label>
+                        <input type="email" name="email" class="w-full p-2 border rounded">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Max Uses</label>
+                        <input type="number" name="max_uses" value="1" min="1" max="10" class="w-full p-2 border rounded">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Expires (Days)</label>
+                        <input type="number" name="expires_days" value="60" min="1" max="365" class="w-full p-2 border rounded">
+                    </div>
+                    <div class="flex items-end">
+                        <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+                            Generate Code
+                        </button>
+                    </div>
+                </form>
+            </div>
+            
+            <!-- Existing Codes Table -->
+            <div class="overflow-x-auto">
+                <table class="min-w-full border border-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-4 py-2 text-left">Code</th>
+                            <th class="px-4 py-2 text-left">Email</th>
+                            <th class="px-4 py-2 text-left">Uses</th>
+                            <th class="px-4 py-2 text-left">Expires</th>
+                            <th class="px-4 py-2 text-left">Status</th>
+                            <th class="px-4 py-2 text-left">Created</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for code in codes %}
+                        <tr class="border-t">
+                            <td class="px-4 py-2 font-mono">{{ code.code }}</td>
+                            <td class="px-4 py-2">{{ code.email or "Any" }}</td>
+                            <td class="px-4 py-2">{{ code.current_uses }}/{{ code.max_uses }}</td>
+                            <td class="px-4 py-2">
+                                {% if code.expires_at %}
+                                    {{ code.expires_at.strftime('%Y-%m-%d') }}
+                                {% else %}
+                                    Never
+                                {% endif %}
+                            </td>
+                            <td class="px-4 py-2">
+                                {% if code.current_uses >= code.max_uses %}
+                                    <span class="text-red-600">Used Up</span>
+                                {% elif code.expires_at and code.expires_at < now() %}
+                                    <span class="text-yellow-600">Expired</span>
+                                {% elif code.is_active %}
+                                    <span class="text-green-600">Active</span>
+                                {% else %}
+                                    <span class="text-gray-600">Inactive</span>
+                                {% endif %}
+                            </td>
+                            <td class="px-4 py-2">{{ code.created_at.strftime('%Y-%m-%d') }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

@@ -226,12 +226,14 @@ class SubscriptionService:
             logger.error(f"Error creating Stripe customer: {str(e)}")
             raise
     
-    async def create_checkout_session(self, user: User, price_id: str, db: Session) -> str:
-        """Create a Stripe checkout session for subscription"""
+    async def create_checkout_session(
+        self, user: User, price_id: str, db: Session, promotion_code: str = None, coupon: str = None
+    ) -> str:
+        """Create a Stripe checkout session for subscription, with optional discount"""
         await self.create_stripe_customer(user, db)
-        
+    
         try:
-            session = stripe.checkout.Session.create(
+            params = dict(
                 customer=user.stripe_customer_id,
                 payment_method_types=["card"],
                 mode="subscription",
@@ -250,9 +252,15 @@ class SubscriptionService:
                     }
                 }
             )
-            
+            # Add the discount if provided
+            if promotion_code:
+                params["discounts"] = [{"promotion_code": promotion_code}]
+            elif coupon:
+                params["discounts"] = [{"coupon": coupon}]
+
+            session = stripe.checkout.Session.create(**params)
             return session.url
-            
+        
         except Exception as e:
             logger.error(f"Error creating checkout session: {str(e)}")
             raise
@@ -464,9 +472,39 @@ class SubscriptionService:
     def _get_tier_from_price_id(self, price_id: str) -> Optional[str]:
         """Get subscription tier from Stripe price ID"""
         for tier, config in self.tier_configs.items():
-            if config.get("stripe_price_id") == price_id:
+            # Check both monthly and annual price IDs
+            if (config.get("stripe_price_id_monthly") == price_id or 
+                config.get("stripe_price_id_annual") == price_id):
                 return tier
         return None
+
+
+    def is_beta_tester(self, user: User, db: Session) -> bool:
+        """Check if user is a beta tester"""
+        if user.subscription_tier == "beta":
+            return True
+    
+        from models import BetaTester
+        beta_profile = db.query(BetaTester).filter(BetaTester.user_id == user.id).first()
+    
+        if beta_profile:
+            # Check if beta access hasn't expired
+            if beta_profile.access_expires and beta_profile.access_expires > datetime.now():
+                return True
+    
+        return False
+
+    def get_beta_features(self, user: User, db: Session) -> Dict[str, Any]:
+        """Get special beta features for beta testers"""
+        if not self.is_beta_tester(user, db):
+            return {}
+    
+        return {
+            "advanced_analytics": True,
+            "priority_support": True,
+            "beta_features": True,
+            "extended_limits": True
+        }
 
 # Global subscription service instance
 subscription_service = SubscriptionService()

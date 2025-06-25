@@ -37,6 +37,17 @@ missing_vars = [var for var in required_vars if not os.getenv(var)]
 if missing_vars:
     raise Exception(f"Missing required environment variables: {', '.join(missing_vars)}")
 
+# Stripe Price IDs (set in .env file)
+# Monthly Price IDs
+PRICE_ID_EDUCATOR_MONTHLY = os.getenv("PRICE_ID_EDUCATOR_MONTHLY")
+PRICE_ID_PROFESSIONAL_MONTHLY = os.getenv("PRICE_ID_PROFESSIONAL_MONTHLY")
+PRICE_ID_INSTITUTION_MONTHLY = os.getenv("PRICE_ID_INSTITUTION_MONTHLY")
+
+# Annual Price IDs
+PRICE_ID_EDUCATOR_ANNUAL = os.getenv("PRICE_ID_EDUCATOR_ANNUAL")
+PRICE_ID_PROFESSIONAL_ANNUAL = os.getenv("PRICE_ID_PROFESSIONAL_ANNUAL")
+PRICE_ID_INSTITUTION_ANNUAL = os.getenv("PRICE_ID_INSTITUTION_ANNUAL")
+
 # Configuration
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-here")
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
@@ -44,11 +55,12 @@ STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
 BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
-
-# Stripe Price IDs (set these in your .env file)
-PRICE_ID_EDUCATOR = os.getenv("PRICE_ID_EDUCATOR")
-PRICE_ID_PROFESSIONAL = os.getenv("PRICE_ID_PROFESSIONAL") 
-PRICE_ID_INSTITUTION = os.getenv("PRICE_ID_INSTITUTION")
+TIER_CONFIGS["educator"]["stripe_price_id_monthly"] = PRICE_ID_EDUCATOR_MONTHLY
+TIER_CONFIGS["educator"]["stripe_price_id_annual"] = PRICE_ID_EDUCATOR_ANNUAL
+TIER_CONFIGS["professional"]["stripe_price_id_monthly"] = PRICE_ID_PROFESSIONAL_MONTHLY
+TIER_CONFIGS["professional"]["stripe_price_id_annual"] = PRICE_ID_PROFESSIONAL_ANNUAL
+TIER_CONFIGS["institution"]["stripe_price_id_monthly"] = PRICE_ID_INSTITUTION_MONTHLY
+TIER_CONFIGS["institution"]["stripe_price_id_annual"] = PRICE_ID_INSTITUTION_ANNUAL
 
 # Configure Stripe
 stripe.api_key = STRIPE_SECRET_KEY
@@ -168,34 +180,46 @@ async def pricing(request: Request, db: Session = Depends(get_db)):
     if user:
         usage_summary = subscription_service.get_usage_summary(user, db)
 
-    # Fetch Stripe prices dynamically
-    price_ids = {
-        "educator": os.getenv("PRICE_ID_EDUCATOR"),
-        "professional": os.getenv("PRICE_ID_PROFESSIONAL"),
-        "institution": os.getenv("PRICE_ID_INSTITUTION")
+    # Fetch Stripe prices dynamically for both monthly and annual
+    PRICE_IDS = {
+        "educator": {
+            "monthly": PRICE_ID_EDUCATOR_MONTHLY,
+            "annual": PRICE_ID_EDUCATOR_ANNUAL
+        },
+        "professional": {
+            "monthly": PRICE_ID_PROFESSIONAL_MONTHLY,
+            "annual": PRICE_ID_PROFESSIONAL_ANNUAL
+        },
+        "institution": {
+            "monthly": PRICE_ID_INSTITUTION_MONTHLY,
+            "annual": PRICE_ID_INSTITUTION_ANNUAL
+        }
     }
     stripe_prices = {}
-    for key, price_id in price_ids.items():
-        if price_id:
-            price_obj = stripe.Price.retrieve(price_id)
-            # Stripe stores price in cents (e.g., 2900 = $29.00)
-            amount = price_obj["unit_amount"] / 100
-            currency = price_obj["currency"].upper()
-            stripe_prices[key] = {
-                "amount": f"{amount:.2f}",
-                "currency": currency,
-                "interval": price_obj["recurring"]["interval"] if price_obj.get("recurring") else "once"
-            }
-        else:
-            stripe_prices[key] = None
-    
+    for plan, periods in PRICE_IDS.items():
+        stripe_prices[plan] = {}
+        for period, price_id in periods.items():
+            if price_id:
+                price_obj = stripe.Price.retrieve(price_id)
+                amount = price_obj["unit_amount"] / 100
+                currency = price_obj["currency"].upper()
+                interval = price_obj["recurring"]["interval"] if price_obj.get("recurring") else "once"
+                stripe_prices[plan][period] = {
+                    "amount": f"{amount:.2f}",
+                    "currency": currency,
+                    "interval": interval
+                }
+            else:
+                stripe_prices[plan][period] = None
+
     return templates.TemplateResponse("pricing.html", {
         "request": request,
         "user": user,
         "usage_summary": usage_summary,
         "tier_configs": TIER_CONFIGS,
         "stripe_publishable_key": STRIPE_PUBLISHABLE_KEY,
-        "price_ids": price_ids,
+        "price_ids": PRICE_IDS,  
+        "stripe_prices": stripe_prices
     })
 
 @app.get("/upload", response_class=HTMLResponse)
@@ -606,23 +630,22 @@ async def get_task_status(task_id: str, request: Request, db: Session = Depends(
 async def create_checkout_session(
     request: Request,
     plan: str = Form(...),
+    billing_period: str = Form("monthly"),
     db: Session = Depends(get_db)
 ):
     user = require_auth(request, db)
     if isinstance(user, RedirectResponse):
         raise HTTPException(status_code=401, detail="Authentication required")
-    
-    price_ids = {
-        "educator": PRICE_ID_EDUCATOR,
-        "professional": PRICE_ID_PROFESSIONAL,
-        "institution": PRICE_ID_INSTITUTION
-    }
-    
-    if plan not in price_ids or not price_ids[plan]:
-        raise HTTPException(status_code=400, detail="Invalid plan or price not configured")
+
+    if plan not in PRICE_IDS or billing_period not in ["monthly", "annual"]:
+        raise HTTPException(status_code=400, detail="Invalid plan or billing period")
+
+    price_id = PRICE_IDS[plan][billing_period]
+    if not price_id:
+        raise HTTPException(status_code=400, detail="Price not configured")
     
     try:
-        checkout_url = await subscription_service.create_checkout_session(user, price_ids[plan], db)
+        checkout_url = await subscription_service.create_checkout_session(user, price_id, db)
         return {"checkout_url": checkout_url}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -638,6 +661,37 @@ async def create_customer_portal_session(request: Request, db: Session = Depends
         return RedirectResponse(url=portal_url, status_code=303)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/api/beta-to-paid")
+async def convert_beta_to_paid(
+    request: Request,
+    plan: str = Form(...),
+    billing_period: str = Form("monthly"),
+    db: Session = Depends(get_db)
+):
+    user = require_auth(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    
+    # Verify user is beta tester
+    if user.subscription_tier != "beta":
+        raise HTTPException(status_code=400, detail="Not a beta tester")
+
+    if plan not in PRICE_IDS or billing_period not in ["monthly", "annual"]:
+        raise HTTPException(status_code=400, detail="Invalid plan or billing period")
+    
+    # Create checkout session with beta tester discount
+    price_id = PRICE_IDS[plan][billing_period]
+    if not price_id:
+        raise HTTPException(status_code=400, detail="Price not configured")
+
+    # Optional: Apply beta tester discount
+    BETA_PROMO_CODE = os.getenv("BETA_PROMO_CODE")
+    checkout_url = await subscription_service.create_checkout_session(
+        user, price_id, db, promotion_code=BETA_PROMO_CODE
+    )
+    
+    return {"checkout_url": checkout_url}
 
 @app.get("/api/usage-summary")
 async def get_usage_summary(request: Request, db: Session = Depends(get_db)):
@@ -728,6 +782,34 @@ async def register(
         errors.append("Password must be at least 8 characters")
     if db.query(User).filter(User.email == email).first():
         errors.append("Email already registered")
+
+    # Check invitation code if provided
+    beta_access = False
+    beta_expires = None
+    used_invitation = None
+    
+    if invitation_code:
+        from models import InvitationCode, BetaTester
+        
+        invite = db.query(InvitationCode).filter(
+            InvitationCode.code == invitation_code,
+            InvitationCode.is_active == True,
+            InvitationCode.current_uses < InvitationCode.max_uses
+        ).first()
+        
+        if invite:
+            # Check expiration
+            if invite.expires_at and invite.expires_at < datetime.now():
+                errors.append("Invitation code has expired")
+            # Check email restriction
+            elif invite.email and invite.email != email:
+                errors.append("This invitation code is restricted to a specific email address")
+            else:
+                beta_access = True
+                beta_expires = datetime.now() + timedelta(days=60)  # 60-day beta access
+                used_invitation = invite
+        else:
+            errors.append("Invalid invitation code")
     
     if errors:
         return templates.TemplateResponse("register.html", {
@@ -737,21 +819,46 @@ async def register(
     
     # Create user with trial period
     password_hash = hashlib.sha256(password.encode()).hexdigest()
-    trial_end = datetime.now() + timedelta(days=7)
+
+    # Beta Users
+    if beta_access:
+        subscription_tier = "beta"
+        subscription_status = "active"
+        trial_end = beta_expires
+    else:
+        subscription_tier = SubscriptionTier.TRIAL.value
+        subscription_status = SubscriptionStatus.TRIALING.value
+        trial_end = datetime.now() + timedelta(days=7)
     
     user = User(
         id=str(uuid.uuid4()),
         email=email,
         password_hash=password_hash,
         full_name=full_name,
-        subscription_tier=SubscriptionTier.TRIAL.value,
-        subscription_status=SubscriptionStatus.TRIALING.value,
+        subscription_tier=subscription_tier,
+        subscription_status=subscription_status,
         trial_end=trial_end
     )
     
     db.add(user)
     db.commit()
     db.refresh(user)
+
+    # Create beta tester record if applicable
+    if beta_access and used_invitation:
+        from models import BetaTester
+        
+        beta_tester = BetaTester(
+            id=str(uuid.uuid4()),
+            user_id=user.id,
+            invitation_code=invitation_code,
+            access_expires=beta_expires
+        )
+        db.add(beta_tester)
+        
+        # Increment invitation code usage
+        used_invitation.current_uses += 1
+        db.commit()
     
     request.session["user"] = {
         "id": user.id,
@@ -761,6 +868,63 @@ async def register(
     }
     
     return RedirectResponse(url="/dashboard", status_code=303)
+
+@app.get("/admin/invitations", response_class=HTMLResponse)
+async def admin_invitations(request: Request, db: Session = Depends(get_db)):
+    # Add admin authentication here
+    user = require_auth(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    
+    # Simple admin check (you may want to implement proper admin roles)
+    if user.email != "admin@scorewise-ai.com":  # Replace with your admin email
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    from models import InvitationCode
+    codes = db.query(InvitationCode).order_by(InvitationCode.created_at.desc()).all()
+    
+    return templates.TemplateResponse("admin_invitations.html", {
+        "request": request,
+        "user": user,
+        "codes": codes
+    })
+
+@app.post("/admin/generate-invitation")
+async def generate_invitation_code(
+    request: Request,
+    email: str = Form(None),
+    max_uses: int = Form(1),
+    expires_days: int = Form(60),
+    db: Session = Depends(get_db)
+):
+    user = require_auth(request, db)
+    if isinstance(user, RedirectResponse):
+        return user
+    
+    # Admin check
+    if user.email != "admin@scorewise-ai.com":  # Replace with your admin email
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    import secrets
+    from models import InvitationCode
+    
+    # Generate unique code
+    code = f"BETA-{secrets.token_urlsafe(8).upper()}"
+    expires_at = datetime.now() + timedelta(days=expires_days) if expires_days else None
+    
+    invitation = InvitationCode(
+        id=str(uuid.uuid4()),
+        code=code,
+        email=email if email else None,
+        max_uses=max_uses,
+        expires_at=expires_at,
+        created_by_admin=user.email
+    )
+    
+    db.add(invitation)
+    db.commit()
+    
+    return RedirectResponse(url="/admin/invitations", status_code=303)
 
 # Health check
 @app.get("/health")
