@@ -477,53 +477,54 @@ class ScoreWiseGrader:
             return ""
 
     async def poll_ocr_completion(self, document_id: str, max_attempts: int = 60, delay: int = 10) -> str:
-        """
-        Poll the OCR API for completion of document processing.
-        """
         headers = {
             'Authorization': f'Bearer {self.handwriting_ocr_key}',
             'Accept': 'application/json'
         }
-    
+
         for attempt in range(max_attempts):
             try:
-                # Check status
                 status_url = f"{self.handwriting_ocr_url.rstrip('/')}/documents/{document_id}"
-            
                 loop = asyncio.get_event_loop()
                 response = await loop.run_in_executor(
                     None,
                     lambda: requests.get(status_url, headers=headers, timeout=30)
                 )
-            
-                if response.status_code == 200:
-                    result = response.json()
-                    status = result.get('status', '')
-                
-                    if status == 'processed':
-                        logger.info(f"✓ OCR processing completed for document {document_id}")
-                        return self.extract_text_from_ocr_result(result)
-                    elif status == 'failed':
-                        logger.error(f"OCR processing failed for document {document_id}")
-                        return ""
-                    elif status in ['queued', 'processing']:
-                        logger.info(f"OCR still processing document {document_id} (attempt {attempt + 1}/{max_attempts})")
-                        await asyncio.sleep(delay)
-                        continue
-                    else:
-                        logger.warning(f"Unknown OCR status '{status}' for document {document_id}")
-                        await asyncio.sleep(delay)
-                        continue
-                else:
-                    logger.error(f"Error checking OCR status: {response.status_code} - {response.text}")
+
+                # Check for empty response
+                if not response.content or not response.content.strip():
+                    logger.error(f"OCR API returned empty response for document {document_id} (attempt {attempt+1})")
                     await asyncio.sleep(delay)
                     continue
-                
+
+                # Try parsing JSON
+                try:
+                    result = response.json()
+                except json.JSONDecodeError:
+                    logger.error(f"OCR API returned non-JSON response for document {document_id}: {response.content}")
+                    await asyncio.sleep(delay)
+                    continue
+
+                status = result.get('status', '')
+                if status == 'processed':
+                    logger.info(f"✓ OCR processing completed for document {document_id}")
+                    return self.extract_text_from_ocr_result(result)
+                elif status == 'failed':
+                    logger.error(f"OCR processing failed for document {document_id}")
+                    return ""
+                elif status in ['queued', 'processing']:
+                    logger.info(f"OCR still processing document {document_id} (attempt {attempt + 1}/{max_attempts})")
+                    await asyncio.sleep(delay)
+                    continue
+                else:
+                    logger.warning(f"Unknown OCR status '{status}' for document {document_id}")
+                    await asyncio.sleep(delay)
+                    continue
             except Exception as e:
                 logger.error(f"Error polling OCR completion: {str(e)}")
                 await asyncio.sleep(delay)
                 continue
-    
+
         logger.error(f"OCR polling timeout for document {document_id} after {max_attempts} attempts")
         return ""
 
