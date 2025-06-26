@@ -34,6 +34,11 @@ class PDFReport(FPDF):
     def __init__(self):
         super().__init__()
         self.set_auto_page_break(auto=True, margin=15)
+
+        # Clear any existing font cache
+        self.fonts = {}
+        self.core_fonts = {}
+
         # Debug path information
         current_file = os.path.abspath(__file__)
         fonts_dir = os.path.join(os.path.dirname(current_file), "fonts")
@@ -55,6 +60,7 @@ class PDFReport(FPDF):
         except Exception as e:
             logger.error(f"Font registration failed: {str(e)}")
             # Fallback to system fonts if needed
+            self._use_builtin_fonts = True
         
         self.add_page()
 
@@ -428,22 +434,27 @@ class ScoreWiseGrader:
         try:
             headers = {
                 'Authorization': f'Bearer {self.handwriting_ocr_key}',
+                # Do NOT set Content-Type manually; requests will set it for multipart/form-data
             }
-            
+
+            data = {
+                'action': 'transcribe'  
+            }
+
             with open(image_path, 'rb') as image_file:
-                files = {'image': image_file}
-                
+                files = {'file': image_file}  # The key must be 'file'
                 loop = asyncio.get_event_loop()
                 response = await loop.run_in_executor(
                     None,
                     lambda: requests.post(
                         self.handwriting_ocr_url,
                         headers=headers,
+                        data=data,
                         files=files,
                         timeout=60
                     )
                 )
-            
+
             if response.status_code == 200:
                 result = response.json()
                 # Extract text based on API response format
