@@ -28,17 +28,34 @@ load_dotenv()
 PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
 HANDWRITING_OCR_API_KEY = os.getenv("HANDWRITING_OCR_API_KEY")
 HANDWRITING_OCR_API_URL = os.getenv("HANDWRITING_OCR_API_URL")
-FONTS_DIR = os.path.join(os.path.dirname(__file__), "fonts")
+FONTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")
 
 class PDFReport(FPDF):
     def __init__(self):
         super().__init__()
         self.set_auto_page_break(auto=True, margin=15)
-        # Register Unicode fonts BEFORE add_page()
-        self.add_font('DejaVu', '', os.path.join(FONTS_DIR, 'DejaVuSans.ttf'), uni=True)
-        self.add_font('DejaVu', 'B', os.path.join(FONTS_DIR, 'DejaVuSans-Bold.ttf'), uni=True)
-        self.add_font('DejaVu', 'I', os.path.join(FONTS_DIR, 'DejaVuSans-Oblique.ttf'), uni=True)
-        self.add_font('DejaVu', 'BI', os.path.join(FONTS_DIR, 'DejaVuSans-BoldOblique.ttf'), uni=True)
+        # Debug path information
+        current_file = os.path.abspath(__file__)
+        fonts_dir = os.path.join(os.path.dirname(current_file), "fonts")
+        
+        logger.info(f"Current file: {current_file}")
+        logger.info(f"Fonts directory: {fonts_dir}")
+        logger.info(f"Fonts directory exists: {os.path.exists(fonts_dir)}")
+        
+        if os.path.exists(fonts_dir):
+            logger.info(f"Font files: {os.listdir(fonts_dir)}")
+        
+        # Register fonts with absolute paths
+        try:
+            self.add_font('DejaVu', '', os.path.join(fonts_dir, 'DejaVuSans.ttf'), uni=True)
+            self.add_font('DejaVu', 'B', os.path.join(fonts_dir, 'DejaVuSans-Bold.ttf'), uni=True)
+            self.add_font('DejaVu', 'I', os.path.join(fonts_dir, 'DejaVuSans-Oblique.ttf'), uni=True)
+            self.add_font('DejaVu', 'BI', os.path.join(fonts_dir, 'DejaVuSans-BoldOblique.ttf'), uni=True)
+            logger.info("✓ Successfully registered DejaVu fonts")
+        except Exception as e:
+            logger.error(f"Font registration failed: {str(e)}")
+            # Fallback to system fonts if needed
+        
         self.add_page()
 
     def header(self):
@@ -61,6 +78,10 @@ class PDFReport(FPDF):
         self.cell(120, 8, title, 0, 0, 'L')
         self.cell(0, 8, f"{score}%", 0, 1, 'R')
 
+def get_poppler_path():
+    if platform.system() == "Windows":
+        return r"C:\poppler-24.08.0\Library\bin"
+    return None
 
 class ScoreWiseGrader:
     # Save the word list (one word per line) as english_words.txt in your project directory
@@ -68,10 +89,6 @@ class ScoreWiseGrader:
         with open(filepath, "r") as f:
             return set(word.strip().lower() for word in f if word.strip())
 
-    def get_poppler_path():
-        if platform.system() == "Windows":
-            return r"C:\poppler-24.08.0\Library\bin"
-        return None
 
     def __init__(self):
         self.api_key = PERPLEXITY_API_KEY

@@ -324,14 +324,20 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
 
         # Predictive analytics: forecast next score using linear regression
         if len(assignment_dates) >= 2:
-            # Convert dates to ordinal for regression
-            dates_ord = [datetime.strptime(d, "%Y-%m-%d").toordinal() for d in assignment_dates]
-            scores_np = np.array(all_scores)
-            dates_np = np.array(dates_ord)
-            # Fit a simple linear trend
-            coef = np.polyfit(dates_np, scores_np, 1)
-            next_date = max(dates_np) + 7  # Predict one week after last assignment
-            predicted_score = int(np.polyval(coef, next_date))
+            try:
+                # Convert dates to ordinal for regression
+                dates_ord = [datetime.strptime(d, "%Y-%m-%d").toordinal() for d in assignment_dates]
+                scores_np = np.array(all_scores)
+                dates_np = np.array(dates_ord)
+        
+                # Fit a simple linear trend with error handling
+                with np.warnings.catch_warnings():
+                    np.warnings.simplefilter("ignore")
+                    coef = np.polyfit(dates_np, scores_np, 1)
+                    next_date = max(dates_np) + 7 # Predict one week after last assignment
+                    predicted_score = int(np.polyval(coef, next_date))
+            except Exception:
+                predicted_score = None
         else:
             predicted_score = None
 
