@@ -394,38 +394,38 @@ class ScoreWiseGrader:
         return final_ratio
 
 
-    async def convert_pdf_to_images(self, file_path: str) -> List[str]:
-        """
-        Convert PDF pages to images for OCR processing.
-        """
-        try:
-            with tempfile.TemporaryDirectory() as temp_dir:
-                # Convert PDF to images
-                poppler_path = get_poppler_path()
-                if poppler_path:
-                    images = convert_from_path(file_path, dpi=300, fmt='jpeg', poppler_path=poppler_path)
-                else:
-                    images = convert_from_path(file_path, dpi=300, fmt='jpeg')
-                image_paths = []
-                
-                for i, image in enumerate(images):
-                    image_path = os.path.join(temp_dir, f"page_{i+1}.jpg")
-                    image.save(image_path, 'JPEG', quality=95)
-                    
-                    # Copy to permanent location for OCR processing
-                    permanent_path = file_path.replace('.pdf', f'_page_{i+1}.jpg')
-                    shutil.copy2(image_path, permanent_path)
-                    image_paths.append(permanent_path)
-                
-                logger.info(f"✓ Converted {len(images)} pages to images")
-                return image_paths
-        except Exception as e:
-            logger.error(f"Error converting PDF to images: {str(e)}")
-            return []
+#    async def convert_pdf_to_images(self, file_path: str) -> List[str]:
+#        """
+#        Convert PDF pages to images for OCR processing.
+#        """
+#        try:
+#            with tempfile.TemporaryDirectory() as temp_dir:
+#                # Convert PDF to images
+#                poppler_path = get_poppler_path()
+#                if poppler_path:
+#                    images = convert_from_path(file_path, dpi=300, fmt='jpeg', poppler_path=poppler_path)
+#                else:
+#                    images = convert_from_path(file_path, dpi=300, fmt='jpeg')
+#                image_paths = []
+#                
+#                for i, image in enumerate(images):
+#                    image_path = os.path.join(temp_dir, f"page_{i+1}.jpg")
+#                    image.save(image_path, 'JPEG', quality=95)
+#                    
+#                    # Copy to permanent location for OCR processing
+#                    permanent_path = file_path.replace('.pdf', f'_page_{i+1}.jpg')
+#                    shutil.copy2(image_path, permanent_path)
+#                    image_paths.append(permanent_path)
+#                
+#                logger.info(f"✓ Converted {len(images)} pages to images")
+#                return image_paths
+#        except Exception as e:
+#            logger.error(f"Error converting PDF to images: {str(e)}")
+#            return []
 
-    async def call_handwriting_ocr_api(self, image_path: str) -> str:
+    async def call_handwriting_ocr_api(self, file_path: str) -> str:
         """
-        Call the Handwriting OCR API to extract text from an image.
+        Call the Handwriting OCR API to process a PDF document.
         """
         if not self.handwriting_ocr_key or not self.handwriting_ocr_url:
             logger.warning("Handwriting OCR API credentials not configured")
@@ -434,15 +434,14 @@ class ScoreWiseGrader:
         try:
             headers = {
                 'Authorization': f'Bearer {self.handwriting_ocr_key}',
-                # Do NOT set Content-Type manually; requests will set it for multipart/form-data
+                # Do NOT set Content-Type for multipart/form-data; requests sets it
             }
-
             data = {
-                'action': 'transcribe'  
+                'action': 'transcribe'  # Use 'transcribe' for handwriting/text extraction
             }
-
-            with open(image_path, 'rb') as image_file:
-                files = {'file': image_file}  # The key must be 'file'
+        
+            with open(file_path, 'rb') as pdf_file:
+                files = {'file': pdf_file}  # The key must be 'file'
                 loop = asyncio.get_event_loop()
                 response = await loop.run_in_executor(
                     None,
@@ -454,25 +453,109 @@ class ScoreWiseGrader:
                         timeout=60
                     )
                 )
-
-            if response.status_code == 200:
+        
+            if response.status_code in [200, 201]:
                 result = response.json()
-                # Extract text based on API response format
-                if 'value' in result:
-                    extracted_text = result['value']
-                elif 'text' in result:
-                    extracted_text = result['text']
-                else:
-                    extracted_text = str(result)
-                
-                logger.info(f"✓ OCR extracted {len(extracted_text)} characters from {os.path.basename(image_path)}")
-                return extracted_text
+            
+                # For 201 status (queued), we need to poll for completion
+                if response.status_code == 201 and result.get('status') == 'queued':
+                    document_id = result.get('id')
+                    if document_id:
+                        return await self.poll_ocr_completion(document_id)
+                    else:
+                        logger.error("No document ID returned from OCR API")
+                        return ""
+            
+                # For 200 status, extract text directly
+                return self.extract_text_from_ocr_result(result)
             else:
                 logger.error(f"OCR API error: {response.status_code} - {response.text}")
                 return ""
-                
+            
         except Exception as e:
             logger.error(f"Error calling handwriting OCR API: {str(e)}")
+            return ""
+
+    async def poll_ocr_completion(self, document_id: str, max_attempts: int = 60, delay: int = 10) -> str:
+        """
+        Poll the OCR API for completion of document processing.
+        """
+        headers = {
+            'Authorization': f'Bearer {self.handwriting_ocr_key}',
+            'Accept': 'application/json'
+        }
+    
+        for attempt in range(max_attempts):
+            try:
+                # Check status
+                status_url = f"{self.handwriting_ocr_url.rstrip('/')}/documents/{document_id}"
+            
+                loop = asyncio.get_event_loop()
+                response = await loop.run_in_executor(
+                    None,
+                    lambda: requests.get(status_url, headers=headers, timeout=30)
+                )
+            
+                if response.status_code == 200:
+                    result = response.json()
+                    status = result.get('status', '')
+                
+                    if status == 'processed':
+                        logger.info(f"✓ OCR processing completed for document {document_id}")
+                        return self.extract_text_from_ocr_result(result)
+                    elif status == 'failed':
+                        logger.error(f"OCR processing failed for document {document_id}")
+                        return ""
+                    elif status in ['queued', 'processing']:
+                        logger.info(f"OCR still processing document {document_id} (attempt {attempt + 1}/{max_attempts})")
+                        await asyncio.sleep(delay)
+                        continue
+                    else:
+                        logger.warning(f"Unknown OCR status '{status}' for document {document_id}")
+                        await asyncio.sleep(delay)
+                        continue
+                else:
+                    logger.error(f"Error checking OCR status: {response.status_code} - {response.text}")
+                    await asyncio.sleep(delay)
+                    continue
+                
+            except Exception as e:
+                logger.error(f"Error polling OCR completion: {str(e)}")
+                await asyncio.sleep(delay)
+                continue
+    
+        logger.error(f"OCR polling timeout for document {document_id} after {max_attempts} attempts")
+        return ""
+
+    def extract_text_from_ocr_result(self, result: dict) -> str:
+        """
+        Extract text from OCR API result, handling different response formats.
+        """
+        try:
+            # Handle different response formats
+            if 'results' in result:
+                # Multi-page format
+                all_text = ""
+                for page_result in result['results']:
+                    page_num = page_result.get('page_number', 1)
+                    transcript = page_result.get('transcript', '')
+                    if transcript:
+                        all_text += f"\n--- Page {page_num} (OCR) ---\n{transcript}"
+                return all_text.strip()
+            elif 'transcript' in result:
+                # Single result format
+                return result['transcript']
+            elif 'value' in result:
+                # Alternative format
+                return result['value']
+            elif 'text' in result:
+                # Another alternative format
+                return result['text']
+            else:
+                logger.warning(f"Unknown OCR result format: {result}")
+                return str(result)
+        except Exception as e:
+            logger.error(f"Error extracting text from OCR result: {str(e)}")
             return ""
 
     async def extract_text_with_ocr_fallback(self, file_path: str) -> str:
@@ -485,6 +568,7 @@ class ScoreWiseGrader:
                 content = await f.read()
             pdf_reader = PyPDF2.PdfReader(io.BytesIO(content))
             text_content = ""
+        
             for page_num, page in enumerate(pdf_reader.pages):
                 try:
                     page_text = page.extract_text()
@@ -492,41 +576,27 @@ class ScoreWiseGrader:
                         text_content += f"\n--- Page {page_num + 1} ---\n{page_text}"
                 except Exception as page_error:
                     logger.warning(f"Could not extract text from page {page_num + 1}: {str(page_error)}")
-            
+
             # Check if we got meaningful text
             if text_content.strip() and not self.is_handwritten_or_scanned(file_path):
                 logger.info(f"✓ Standard text extraction successful for {os.path.basename(file_path)}")
                 return text_content.strip()
             else:
                 logger.info(f"⚠️ Low text quality detected, falling back to OCR for {os.path.basename(file_path)}")
-                
+            
         except Exception as e:
             logger.warning(f"Standard text extraction failed: {str(e)}, falling back to OCR")
 
-        # Fallback to OCR processing
+        # Fallback to OCR processing - send entire PDF to API
         try:
-            image_paths = await self.convert_pdf_to_images(file_path)
-            if not image_paths:
-                return f"Error processing PDF {os.path.basename(file_path)}: Could not convert to images"
-            
-            ocr_text = ""
-            for i, image_path in enumerate(image_paths):
-                page_text = await self.call_handwriting_ocr_api(image_path)
-                if page_text:
-                    ocr_text += f"\n--- Page {i + 1} (OCR) ---\n{page_text}"
-                
-                # Clean up temporary image file
-                try:
-                    os.remove(image_path)
-                except:
-                    pass
-            
+            ocr_text = await self.call_handwriting_ocr_api(file_path)
+        
             if ocr_text.strip():
                 logger.info(f"✓ OCR extraction successful for {os.path.basename(file_path)}")
                 return ocr_text.strip()
             else:
                 return f"OCR processing completed for {os.path.basename(file_path)} but no text was extracted"
-                
+            
         except Exception as e:
             logger.error(f"OCR fallback failed: {str(e)}")
             return f"Error processing {os.path.basename(file_path)}: {str(e)}"

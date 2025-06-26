@@ -292,9 +292,25 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
         }
 
     # Advanced analytics
-    def aggregate_advanced_stats(stats_list, all_individual):
-        if not stats_list or not all_individual:
+    def aggregate_advanced_stats(stats_list, completed_assignments):
+        if not stats_list or not completed_assignments:
             return None
+
+        # Calculate all_individual from completed_assignments
+        all_individual = []
+        for a in completed_assignments:
+            if a.results and a.results.get("individual_results"):
+                for r in a.results["individual_results"]:
+                    all_individual.append({
+                        "assignment_id": a.id,
+                        "score": r.get("overall_score"),
+                        "rubric_scores": r.get("rubric_scores", {}),
+                        "student_name": r.get("student_name", "Student"),
+                        "date": a.created_at.strftime("%Y-%m-%d"),
+                        "strengths": r.get("strengths", []),
+                        "areas_for_improvement": r.get("areas_for_improvement", [])
+                    })
+
         scores = [s.get("average_score", 0) for s in stats_list if s]
         highest = max([s.get("highest_score", 0) for s in stats_list if s], default=None)
         lowest = min([s.get("lowest_score", 0) for s in stats_list if s], default=None)
@@ -316,11 +332,23 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
         # AI feedback highlights
         all_strengths = []
         all_improvements = []
-        for r in all_individual:
-            all_strengths.extend(r.get("strengths", []))
-            all_improvements.extend(r.get("areas_for_improvement", []))
-        top_strengths = [s for s, _ in Counter(all_strengths).most_common(3)]
-        top_improvements = [s for s, _ in Counter(all_improvements).most_common(3)]
+    
+        # Get individual results from assignments and extract feedback
+        for assignment in completed_assignments:  # This should be passed as parameter
+            if assignment.results and assignment.results.get("individual_results"):
+                for individual_result in assignment.results["individual_results"]:
+                    # Extract strengths and improvements from individual results
+                    strengths = individual_result.get("strengths", [])
+                    improvements = individual_result.get("areas_for_improvement", [])
+                
+                    if isinstance(strengths, list):
+                        all_strengths.extend(strengths)
+                    if isinstance(improvements, list):
+                        all_improvements.extend(improvements)
+
+        # Get top 3 most common
+        top_strengths = [s for s, _ in Counter(all_strengths).most_common(3)] if all_strengths else []
+        top_improvements = [s for s, _ in Counter(all_improvements).most_common(3)] if all_improvements else []
 
         # Predictive analytics: forecast next score using linear regression
         if len(assignment_dates) >= 2:
@@ -358,7 +386,7 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
     show_advanced_analytics = tier in ["professional", "institution"]
 
     basic_analytics = aggregate_basic_stats(all_stats) if show_basic_analytics else None
-    advanced_analytics = aggregate_advanced_stats(all_stats, all_individual) if show_advanced_analytics else None
+    advanced_analytics = aggregate_advanced_stats(all_stats, completed_assignments) if show_advanced_analytics else None
 
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
