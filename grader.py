@@ -425,28 +425,32 @@ class ScoreWiseGrader:
 
     async def call_handwriting_ocr_api(self, file_path: str) -> str:
         """
-        Call the Handwriting OCR API to process a PDF document.
+        Call the Handwriting OCR API to process a complete PDF document.
+        Follows the official API documentation at https://www.handwritingocr.com/api/docs
         """
         if not self.handwriting_ocr_key or not self.handwriting_ocr_url:
             logger.warning("Handwriting OCR API credentials not configured")
             return ""
 
         try:
+            # Step 1: Upload the entire PDF document
             headers = {
                 'Authorization': f'Bearer {self.handwriting_ocr_key}',
-                # Do NOT set Content-Type for multipart/form-data; requests sets it
+                'Accept': 'application/json'
             }
+        
             data = {
-                'action': 'transcribe'  # Use 'transcribe' for handwriting/text extraction
+                'action': 'transcribe',
+                'delete_after': '604800'  # Auto-delete after 7 days
             }
         
             with open(file_path, 'rb') as pdf_file:
-                files = {'file': pdf_file}  # The key must be 'file'
+                files = {'file': pdf_file}
                 loop = asyncio.get_event_loop()
                 response = await loop.run_in_executor(
                     None,
                     lambda: requests.post(
-                        self.handwriting_ocr_url,
+                        'https://www.handwritingocr.com/api/v3/documents',
                         headers=headers,
                         data=data,
                         files=files,
@@ -454,22 +458,18 @@ class ScoreWiseGrader:
                     )
                 )
         
-            if response.status_code in [200, 201]:
+            if response.status_code == 200:
                 result = response.json()
-            
-                # For 201 status (queued), we need to poll for completion
-                if response.status_code == 201 and result.get('status') == 'queued':
-                    document_id = result.get('id')
-                    if document_id:
-                        return await self.poll_ocr_completion(document_id)
-                    else:
-                        logger.error("No document ID returned from OCR API")
-                        return ""
-            
-                # For 200 status, extract text directly
-                return self.extract_text_from_ocr_result(result)
+                document_id = result.get('id')
+                if document_id:
+                    logger.info(f"✓ Document uploaded successfully, ID: {document_id}")
+                    # Step 2 & 3: Poll for completion and get results
+                    return await self.poll_ocr_completion(document_id)
+                else:
+                    logger.error("No document ID returned from OCR API")
+                    return ""
             else:
-                logger.error(f"OCR API error: {response.status_code} - {response.text}")
+                logger.error(f"OCR API upload error: {response.status_code} - {response.text}")
                 return ""
             
         except Exception as e:
@@ -477,84 +477,95 @@ class ScoreWiseGrader:
             return ""
 
     async def poll_ocr_completion(self, document_id: str, max_attempts: int = 60, delay: int = 10) -> str:
+        """
+        Poll the OCR API for document processing completion.
+        Follows the official polling pattern from the API documentation.
+        """
         headers = {
             'Authorization': f'Bearer {self.handwriting_ocr_key}',
             'Accept': 'application/json'
         }
-
+    
         for attempt in range(max_attempts):
             try:
-                status_url = f"{self.handwriting_ocr_url.rstrip('/')}/documents/{document_id}"
+                # Use the correct polling endpoint from API docs
+                status_url = f"https://www.handwritingocr.com/api/v3/documents/{document_id}"
+            
                 loop = asyncio.get_event_loop()
                 response = await loop.run_in_executor(
                     None,
                     lambda: requests.get(status_url, headers=headers, timeout=30)
                 )
+            
+                if response.status_code == 200:
+                    # Check for empty response
+                    if not response.content or not response.content.strip():
+                        logger.error(f"OCR API returned empty response for document {document_id} (attempt {attempt+1})")
+                        await asyncio.sleep(delay)
+                        continue
 
-                # Check for empty response
-                if not response.content or not response.content.strip():
-                    logger.error(f"OCR API returned empty response for document {document_id} (attempt {attempt+1})")
-                    await asyncio.sleep(delay)
-                    continue
+                    # Parse JSON response
+                    try:
+                        result = response.json()
+                    except json.JSONDecodeError:
+                        logger.error(f"OCR API returned non-JSON response for document {document_id}: {response.status_code} - {response.text[:200]}")
+                        await asyncio.sleep(delay)
+                        continue
 
-                # Try parsing JSON
-                try:
-                    result = response.json()
-                except json.JSONDecodeError:
-                    logger.error(f"OCR API returned non-JSON response for document {document_id}: {response.content}")
-                    await asyncio.sleep(delay)
-                    continue
-
-                status = result.get('status', '')
-                if status == 'processed':
-                    logger.info(f"✓ OCR processing completed for document {document_id}")
-                    return self.extract_text_from_ocr_result(result)
-                elif status == 'failed':
-                    logger.error(f"OCR processing failed for document {document_id}")
-                    return ""
-                elif status in ['queued', 'processing']:
-                    logger.info(f"OCR still processing document {document_id} (attempt {attempt + 1}/{max_attempts})")
-                    await asyncio.sleep(delay)
-                    continue
+                    status = result.get('status', '')
+                
+                    if status == 'processed':
+                        logger.info(f"✓ OCR processing completed for document {document_id}")
+                        return self.extract_text_from_ocr_result(result)
+                    elif status == 'failed':
+                        logger.error(f"OCR processing failed for document {document_id}")
+                        return ""
+                    elif status in ['new', 'queued', 'processing']:
+                        logger.info(f"OCR still processing document {document_id}, status: {status} (attempt {attempt + 1}/{max_attempts})")
+                        await asyncio.sleep(delay)
+                        continue
+                    else:
+                        logger.warning(f"Unknown OCR status '{status}' for document {document_id}")
+                        await asyncio.sleep(delay)
+                        continue
                 else:
-                    logger.warning(f"Unknown OCR status '{status}' for document {document_id}")
+                    logger.error(f"Error checking OCR status: {response.status_code} - {response.text[:200]}")
                     await asyncio.sleep(delay)
                     continue
+                
             except Exception as e:
                 logger.error(f"Error polling OCR completion: {str(e)}")
                 await asyncio.sleep(delay)
                 continue
-
+    
         logger.error(f"OCR polling timeout for document {document_id} after {max_attempts} attempts")
         return ""
 
     def extract_text_from_ocr_result(self, result: dict) -> str:
         """
-        Extract text from OCR API result, handling different response formats.
+        Extract text from OCR API result following the documented response format.
+        The API returns results as an array of page objects with page_number and transcript.
         """
         try:
-            # Handle different response formats
             if 'results' in result:
-                # Multi-page format
+                # Multi-page format as documented in API docs
                 all_text = ""
                 for page_result in result['results']:
                     page_num = page_result.get('page_number', 1)
                     transcript = page_result.get('transcript', '')
-                    if transcript:
-                        all_text += f"\n--- Page {page_num} (OCR) ---\n{transcript}"
-                return all_text.strip()
-            elif 'transcript' in result:
-                # Single result format
-                return result['transcript']
-            elif 'value' in result:
-                # Alternative format
-                return result['value']
-            elif 'text' in result:
-                # Another alternative format
-                return result['text']
+                    if transcript.strip():
+                        all_text += f"\n--- Page {page_num} (OCR) ---\n{transcript.strip()}"
+            
+                if all_text.strip():
+                    logger.info(f"✓ OCR extracted text from {len(result['results'])} pages")
+                    return all_text.strip()
+                else:
+                    logger.warning("OCR completed but no text was extracted")
+                    return "OCR processing completed but no text was extracted"
             else:
-                logger.warning(f"Unknown OCR result format: {result}")
+                logger.warning(f"Unexpected OCR result format: {result}")
                 return str(result)
+            
         except Exception as e:
             logger.error(f"Error extracting text from OCR result: {str(e)}")
             return ""
@@ -562,6 +573,7 @@ class ScoreWiseGrader:
     async def extract_text_with_ocr_fallback(self, file_path: str) -> str:
         """
         Extract text from PDF with OCR fallback for handwritten/scanned documents.
+        This is the main entry point that decides whether to use standard extraction or OCR.
         """
         # First, try standard text extraction
         try:
@@ -578,7 +590,7 @@ class ScoreWiseGrader:
                 except Exception as page_error:
                     logger.warning(f"Could not extract text from page {page_num + 1}: {str(page_error)}")
 
-            # Check if we got meaningful text
+            # Check if we got meaningful text using your existing detection logic
             if text_content.strip() and not self.is_handwritten_or_scanned(file_path):
                 logger.info(f"✓ Standard text extraction successful for {os.path.basename(file_path)}")
                 return text_content.strip()
@@ -588,7 +600,7 @@ class ScoreWiseGrader:
         except Exception as e:
             logger.warning(f"Standard text extraction failed: {str(e)}, falling back to OCR")
 
-        # Fallback to OCR processing - send entire PDF to API
+        # Fallback to OCR processing - send entire PDF to API (no looping!)
         try:
             ocr_text = await self.call_handwriting_ocr_api(file_path)
         
