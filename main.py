@@ -388,6 +388,16 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
     basic_analytics = aggregate_basic_stats(all_stats) if show_basic_analytics else None
     advanced_analytics = aggregate_advanced_stats(all_stats, completed_assignments) if show_advanced_analytics else None
 
+    # Debug output - add this temporarily
+    print(f"DEBUG - User tier: {user.subscription_tier}")
+    print(f"DEBUG - Show advanced analytics: {show_advanced_analytics}")
+    print(f"DEBUG - Completed assignments count: {len(completed_assignments)}")
+    print(f"DEBUG - Advanced analytics: {advanced_analytics}")
+
+    if advanced_analytics:
+        print(f"DEBUG - Top strengths: {advanced_analytics.get('top_strengths', [])}")
+        print(f"DEBUG - Top improvements: {advanced_analytics.get('top_improvements', [])}")
+
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
         "user": user,
