@@ -293,7 +293,8 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
 
     # Advanced analytics
     def aggregate_advanced_stats(stats_list, completed_assignments):
-        if not stats_list or not completed_assignments:
+        if not completed_assignments:
+            print("DEBUG - No completed assignments for analytics")
             return None
 
         # Calculate all_individual from completed_assignments
@@ -310,6 +311,10 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
                         "strengths": r.get("strengths", []),
                         "areas_for_improvement": r.get("areas_for_improvement", [])
                     })
+    
+        if not all_individual:
+            print("DEBUG - No individual results found for analytics")
+            return None
 
         scores = [s.get("average_score", 0) for s in stats_list if s]
         highest = max([s.get("highest_score", 0) for s in stats_list if s], default=None)
@@ -393,6 +398,18 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
     print(f"DEBUG - Show advanced analytics: {show_advanced_analytics}")
     print(f"DEBUG - Completed assignments count: {len(completed_assignments)}")
     print(f"DEBUG - Advanced analytics: {advanced_analytics}")
+    print(f"DEBUG - Recent assignments count: {len(recent_assignments)}")
+    print(f"DEBUG - Completed assignments with results: {len([a for a in recent_assignments if a.status == 'completed' and a.results])}")
+    print(f"DEBUG - All stats length: {len(all_stats)}")
+    print(f"DEBUG - Sample assignment statuses: {[(a.id[:8], a.status, bool(a.results)) for a in recent_assignments[:3]]}")
+
+    if completed_assignments:
+        sample = completed_assignments[0]
+        print(f"DEBUG - Sample assignment results structure: {list(sample.results.keys()) if sample.results else 'No results'}")
+        if sample.results and sample.results.get('individual_results'):
+            individual_sample = sample.results['individual_results'][0] if sample.results['individual_results'] else {}
+            print(f"DEBUG - Sample individual result keys: {list(individual_sample.keys())}")
+            print(f"DEBUG - Has strengths/improvements: {bool(individual_sample.get('strengths'))}/{bool(individual_sample.get('areas_for_improvement'))}")
 
     if advanced_analytics:
         print(f"DEBUG - Top strengths: {advanced_analytics.get('top_strengths', [])}")

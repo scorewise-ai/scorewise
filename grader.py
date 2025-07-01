@@ -140,9 +140,9 @@ class ScoreWiseGrader:
             },
             "physics": {
                 "Physics Concepts": {"weight": 0.30, "description": "Understanding of physical principles and laws"},
-                "Mathematical Application": {"weight": 0.25, "description": "Correct use of equations and mathematical tools"},
-                "Problem-Solving Strategy": {"weight": 0.25, "description": "Logical approach to physics problems"},
-                "Units & Dimensional Analysis": {"weight": 0.20, "description": "Proper use of units and dimensional consistency"}
+                "Mathematical Application": {"weight": 0.30, "description": "Correct use of equations and mathematical tools"},
+                "Problem-Solving Strategy": {"weight": 0.30, "description": "Logical approach to physics problems"},
+                "Units & Dimensional Analysis": {"weight": 0.10, "description": "Proper use of units and dimensional consistency"}
             },
             # Humanities
             "english_literature": {
@@ -324,7 +324,7 @@ class ScoreWiseGrader:
             garbled_ratio = self._calculate_garbled_ratio(sample_text)
             valid_word_ratio = self._calculate_valid_word_ratio(sample_text)
 
-            is_low_coverage = text_percentage < 0.05
+            is_low_coverage = text_percentage < 0.15
             is_garbled = garbled_ratio > 0.2  # Lowered threshold
             is_sparse = text_length < 100 and len(pdf_reader.pages) > 0
             is_low_valid_word = valid_word_ratio < 0.5  # Less than 50% valid words
@@ -749,31 +749,31 @@ class ScoreWiseGrader:
             subject = task_data["subject"]
             assessment_type = task_data["assessment_type"]
             files = task_data["files"]
+
             logger.info(f"🎯 Starting grading for task {task_id}")
-            
+
             task_dir = Path(f"uploads/{task_id}")
             reports_dir = task_dir / "reports"
             reports_dir.mkdir(exist_ok=True)
-            
+
             assignment_text = ""
             if "assignment" in files:
                 assignment_text = await self.extract_text_from_pdf(files["assignment"])
-            
+
             solution_text = ""
             if "solution" in files:
                 solution_text = await self.extract_text_from_pdf(files["solution"])
-            
+
             # Get appropriate rubric
-            rubric = self.default_rubrics.get(subject, {}).get(assessment_type)
-            if not rubric:
-                rubric = self._get_fallback_rubric(subject, assessment_type)
-            
+            rubric = self.get_appropriate_rubric(subject, assessment_type)
+
             submission_results = []
             submissions = files.get("submissions", [])
+
             for i, submission_path in enumerate(submissions):
                 student_name = self.extract_student_name(submission_path)
                 submission_text = await self.extract_text_from_pdf(submission_path)
-                
+
                 individual_result = await self.grade_individual_submission(
                     assignment_text=assignment_text,
                     submission_text=submission_text,
@@ -782,13 +782,15 @@ class ScoreWiseGrader:
                     subject=subject,
                     assessment_type=assessment_type
                 )
+
                 individual_result["submission_id"] = i + 1
                 individual_result["file_path"] = submission_path
                 individual_result["student_name"] = student_name
                 submission_results.append(individual_result)
-                
+
                 report_filename = f"{student_name.replace(' ', '_')}_report.pdf"
                 report_path = reports_dir / report_filename
+
                 await self.generate_pdf_report(
                     student_name=student_name,
                     result=individual_result,
@@ -797,10 +799,10 @@ class ScoreWiseGrader:
                     assessment_type=assessment_type,
                     output_path=str(report_path)
                 )
-            
+
             zip_path = await self.create_reports_zip(task_dir)
             overall_stats = self.calculate_overall_statistics(submission_results)
-            
+
             results = {
                 "task_id": task_id,
                 "subject": subject,
@@ -813,9 +815,10 @@ class ScoreWiseGrader:
                 "processed_at": datetime.now().isoformat(),
                 "status": "completed"
             }
-            
+
             logger.info(f"🎉 Grading completed for {task_id}")
             return results
+
         except Exception as e:
             logger.error(f"✗ Grading error for {task_data.get('task_id', 'unknown')}: {str(e)}")
             return {
@@ -824,14 +827,39 @@ class ScoreWiseGrader:
                 "error": str(e),
                 "processed_at": datetime.now().isoformat()
             }
+
+    def get_appropriate_rubric(self, subject: str, assessment_type: str) -> Dict:
+        """
+        Get the appropriate rubric for a subject and assessment type.
+        Handles both direct subject rubrics and nested subject[assessment_type] rubrics.
+        """
+        if subject not in self.default_rubrics:
+            return self._get_fallback_rubric(subject, assessment_type)
+    
+        subject_rubrics = self.default_rubrics[subject]
+    
+        # Check if this is a nested structure (has assessment_type keys)
+        if assessment_type in subject_rubrics:
+            # Nested structure: subject -> assessment_type -> rubric
+            return subject_rubrics[assessment_type]
+    
+        # Check if this is a direct rubric structure
+        # (Direct rubrics have criteria with 'weight' and 'description' keys)
+        first_key = next(iter(subject_rubrics.keys()), None)
+        if first_key and isinstance(subject_rubrics[first_key], dict) and 'weight' in subject_rubrics[first_key]:
+            # This is a direct rubric - use it regardless of assessment_type
+            return subject_rubrics
+    
+        # If we can't determine the structure, use fallback
+        return self._get_fallback_rubric(subject, assessment_type)
     
     def _get_fallback_rubric(self, subject: str, assessment_type: str) -> Dict:
         # Fallback logic for unconfigured combinations
         return {
             "Content Quality": {"weight": 0.40, "description": "Relevance and depth of content"},
-            "Technical Accuracy": {"weight": 0.30, "description": "Correctness of information"},
-            "Organization": {"weight": 0.20, "description": "Logical structure and flow"},
-            "Presentation": {"weight": 0.10, "description": "Clarity and professionalism"}
+            "Technical Accuracy": {"weight": 0.40, "description": "Correctness of information"},
+            "Organization": {"weight": 0.15, "description": "Logical structure and flow"},
+            "Presentation": {"weight": 0.05, "description": "Clarity and professionalism"}
         }
     
     async def grade_individual_submission(self, assignment_text: str, submission_text: str,
@@ -890,7 +918,7 @@ class ScoreWiseGrader:
         
         prompt = f"""
         You are an expert {subject} educator grading a {assessment_type.replace('_', ' ')} assignment.
-        Please provide detailed, constructive feedback and accurate scoring.
+        Please provide detailed, constructive feedback and accurate scoring. 
         
         ASSIGNMENT INSTRUCTIONS:
         {assignment_text[:2000]}
@@ -923,7 +951,7 @@ class ScoreWiseGrader:
             "confidence": 0.0-1.0
         }}
         
-        Be fair, constructive, and specific in your feedback. Focus on helping the student learn and improve in {subject}.
+        Be fair, constructive, and specific in your feedback. Focus on helping the student learn and improve in {subject}. Reward correct reasoning and effort, and avoid harsh penalties for minor mistakes or presentation issues.
         """
         return prompt
 
@@ -941,7 +969,7 @@ class ScoreWiseGrader:
             "messages": [
                 {
                     "role": "system",
-                    "content": "You are an expert educator providing fair, detailed, and constructive feedback on student work."
+                    "content": "You are an expert educator providing fair, detailed, and constructive feedback on student work. Be generous and supportive in your scoring, focusing on rewarding correct reasoning and effort. Only deduct points for major errors."
                 },
                 {
                     "role": "user",
