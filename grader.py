@@ -443,7 +443,7 @@ class ScoreWiseGrader:
             garbled_ratio = self._calculate_garbled_ratio(sample_text)
             valid_word_ratio = self._calculate_valid_word_ratio(sample_text)
 
-            is_low_coverage = text_percentage < 0.15
+            is_low_coverage = text_percentage < 0.12
             is_garbled = garbled_ratio > 0.2  # Lowered threshold
             is_sparse = text_length < 100 and len(pdf_reader.pages) > 0
             is_low_valid_word = valid_word_ratio < 0.5  # Less than 50% valid words

@@ -11,6 +11,7 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
     <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
 </head>
 <body class="bg-gray-50 min-h-screen">
     <!-- Navigation -->
@@ -202,7 +203,8 @@
             <ul class="divide-y divide-gray-200">
                 {% if assignments %}
                     {% for assignment in assignments %}
-                    <li class="px-4 py-4 sm:px-6" data-status="{{ assignment.status }}">
+                    <li class="px-4 py-4 sm:px-6"
+                        data-status="{{ assignment.status }}">
                         <div class="flex items-center justify-between">
                             <div class="flex items-center">
                                 <div class="flex-shrink-0">
@@ -224,6 +226,15 @@
                                 </div>
                             </div>
                             <div class="flex items-center space-x-2">
+                                {% if assignment.status == 'processing' %}
+                                <form hx-post="/api/mark-failed/{{ assignment.id }}" hx-trigger="click" hx-swap="outerHTML">
+                                   <button
+                                      class="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700"
+                                      onclick="return confirm('Mark this run as failed?');">
+                                      Mark failed
+                                   </button>
+                                </form>
+                                {% endif %}
                                 {% if assignment.status == 'completed' and assignment.reports_zip_path %}
                                     <a href="/api/download-reports/{{ assignment.id }}" 
                                        class="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700">
@@ -419,74 +430,36 @@
         console.log('Advanced analytics data:', {{ advanced_analytics | tojson }});
     </script>
     {% endif %}
+
     <script>
-    // Enhanced auto-refresh logic that stops when all assignments are completed
-    document.addEventListener('DOMContentLoaded', function() {
-        const processingAssignments = document.querySelectorAll('[data-status="processing"]');
-    
-        if (processingAssignments.length > 0) {
-            console.log(`Found ${processingAssignments.length} processing assignments. Starting polling...`);
-        
-            let pollCount = 0;
-            const maxPolls = 180; // 30 minutes max (180 * 10 seconds)
-        
-            const pollInterval = setInterval(async () => {
-                pollCount++;
-            
-                try {
-                    const response = await fetch('/api/dashboard-status');
-                    const data = await response.json();
-                
-                    console.log(`Poll ${pollCount}: Checking status...`, data);
-                
-                    if (data.has_completed_assignments || data.all_processing_complete) {
-                        console.log('✓ All assignments completed. Stopping polling and refreshing page.');
-                        clearInterval(pollInterval);
-                        window.location.reload();
-                        return;
-                    }
-                
-                    // Optional: Update UI to show progress without full refresh
-                    if (data.completed_count && data.total_processing) {
-                        console.log(`Progress: ${data.completed_count}/${data.total_processing} completed`);
-                    }
-                
-                    // Stop after max attempts
-                    if (pollCount >= maxPolls) {
-                        console.log('⚠️ Polling timeout reached. Stopping automatic updates.');
-                        clearInterval(pollInterval);
-                    }
-                
-                } catch (error) {
-                    console.error('Status check failed:', error);
-                    // Don't stop polling on individual errors, just log them
+    // Auto-refresh logic that stops after assignments are completed
+    document.addEventListener("DOMContentLoaded", () => {
+        const list = [...document.querySelectorAll('[data-status="processing"]')];
+        if (list.length === 0) return;   // nothing to poll
+
+        const badge = document.createElement("div");
+        badge.id = "polling-indicator";
+        badge.className =
+          "fixed top-4 right-4 bg-blue-500 text-white px-3 py-2 rounded shadow z-50";
+        badge.innerHTML =
+          '<span class="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent mr-2 rounded-full"></span>Checking for updates…';
+        document.body.appendChild(badge);
+
+        async function poll() {
+            try {
+                const r = await fetch("/api/dashboard-status");
+                const j = await r.json();
+                if (j.all_processing_complete) {
+                    badge.remove();
+                    location.reload();        // will re-render statuses
+                    return;                   //  ← stop polling
                 }
-            }, 10000); // Poll every 10 seconds
-        
-            // Add visual indicator that polling is active
-            const indicator = document.createElement('div');
-            indicator.id = 'polling-indicator';
-            indicator.className = 'fixed top-4 right-4 bg-blue-500 text-white px-3 py-2 rounded shadow z-50';
-            indicator.innerHTML = `
-                <div class="flex items-center">
-                    <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    Checking for updates...
-                </div>
-        `    ;
-            document.body.appendChild(indicator);
-        
-            // Remove indicator when polling stops
-            const originalClearInterval = window.clearInterval;
-            window.clearInterval = function(id) {
-                if (id === pollInterval) {
-                    const indicator = document.getElementById('polling-indicator');
-                    if (indicator) {
-                        indicator.remove();
-                    }
-                }
-                originalClearInterval(id);
-            };
+            } catch (e) {
+                console.error("Polling failed", e);
+            }
+            setTimeout(poll, 10000);          // recurse after 10 s only if still busy
         }
+        poll();                               // first call
     });
     </script>
 </body>

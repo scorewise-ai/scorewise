@@ -428,35 +428,25 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
     })
 
 @app.get("/api/dashboard-status")
-async def dashboard_status(request: Request, db: Session = Depends(get_db)):
+async def dashboard_status(
+    request: Request,
+    db: Session = Depends(get_db)
+):
     user = require_auth(request, db)
     if isinstance(user, RedirectResponse):
-        raise HTTPException(status_code=401, detail="Authentication required")
-    
-    # Get all assignments for this user from the last hour
-    recent_cutoff = datetime.now() - timedelta(hours=1)
-    
-    # Count recently completed assignments
-    recent_completed = db.query(Assignment).filter(
-        Assignment.user_id == user.id,
-        Assignment.status == "completed",
-        Assignment.completed_at > recent_cutoff
-    ).count()
-    
-    # Count currently processing assignments
-    currently_processing = db.query(Assignment).filter(
+        raise HTTPException(status_code=401, detail="Auth required")
+
+    # refresh any possibly cached rows
+    db.expire_all()           # ← forces the next query to hit the DB
+
+    processing = db.query(Assignment).filter(
         Assignment.user_id == user.id,
         Assignment.status == "processing"
     ).count()
-    
-    # Check if all recent processing assignments are now completed
-    all_processing_complete = currently_processing == 0
-    
+
     return {
-        "has_completed_assignments": recent_completed > 0,
-        "all_processing_complete": all_processing_complete,
-        "completed_count": recent_completed,
-        "total_processing": currently_processing
+        "all_processing_complete": processing == 0,
+        "total_processing": processing,
     }
 
 @app.post("/api/upload")
@@ -662,6 +652,26 @@ async def process_grading_task(task_id: str, db: Session):
                 db.commit()
         except:
             pass
+
+@app.post("/api/mark-failed/{task_id}")
+async def mark_failed(
+        task_id: str,
+        request: Request,
+        db: Session = Depends(get_db)
+):
+    user = require_auth(request, db)
+    if isinstance(user, RedirectResponse):
+        raise HTTPException(401, "Auth required")
+
+    assn = db.query(Assignment).filter(Assignment.id == task_id).first()
+    if not assn or assn.user_id != user.id:
+        raise HTTPException(404, "Assignment not found")
+
+    assn.status = "error"
+    assn.error_message = assn.error_message or "Manually marked failed"
+    assn.completed_at = datetime.now()
+    db.commit()
+    return {"status": "ok"}
 
 @app.get("/api/download-reports/{task_id}")
 async def download_reports(task_id: str, request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
