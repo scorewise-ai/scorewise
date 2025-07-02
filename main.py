@@ -427,6 +427,21 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
         "show_advanced_analytics": show_advanced_analytics,
     })
 
+@app.get("/api/dashboard-status")
+async def dashboard_status(request: Request, db: Session = Depends(get_db)):
+    user = require_auth(request, db)
+    if isinstance(user, RedirectResponse):
+        raise HTTPException(status_code=401, detail="Authentication required")
+    
+    # Check for recently completed assignments
+    recent_completed = db.query(Assignment).filter(
+        Assignment.user_id == user.id,
+        Assignment.status == "completed",
+        Assignment.completed_at > datetime.now() - timedelta(minutes=10)
+    ).count()
+    
+    return {"has_completed_assignments": recent_completed > 0}
+
 @app.post("/api/upload")
 async def upload_files(
     request: Request,

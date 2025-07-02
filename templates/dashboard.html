@@ -7,6 +7,10 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
     <link rel="stylesheet" href="/static/style.css">
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
 </head>
 <body class="bg-gray-50 min-h-screen">
     <!-- Navigation -->
@@ -198,7 +202,7 @@
             <ul class="divide-y divide-gray-200">
                 {% if assignments %}
                     {% for assignment in assignments %}
-                    <li class="px-4 py-4 sm:px-6">
+                    <li class="px-4 py-4 sm:px-6" data-status="{{ assignment.status }}">
                         <div class="flex items-center justify-between">
                             <div class="flex items-center">
                                 <div class="flex-shrink-0">
@@ -415,5 +419,33 @@
         console.log('Advanced analytics data:', {{ advanced_analytics | tojson }});
     </script>
     {% endif %}
+    <script>
+    // Auto-refresh dashboard for processing assignments
+    document.addEventListener('DOMContentLoaded', function() {
+        const processingAssignments = document.querySelectorAll('[data-status="processing"]');
+    
+        if (processingAssignments.length > 0) {
+            // Poll every 10 seconds for updates
+            const pollInterval = setInterval(() => {
+                fetch('/api/dashboard-status')
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.has_completed_assignments) {
+                            clearInterval(pollInterval);
+                            window.location.reload();
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Status check failed:', error);
+                    });
+            }, 10000); // Check every 10 seconds
+        
+            // Stop polling after 7 minutes
+            setTimeout(() => {
+                clearInterval(pollInterval);
+            }, 420000);
+        }
+    });
+    </script>
 </body>
 </html>

@@ -21,8 +21,26 @@ from PIL import Image
 import platform
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+import sys
+
+# Clear any existing handlers to ensure fresh configuration
+root_logger = logging.getLogger()
+if root_logger.handlers:
+    for handler in root_logger.handlers:
+        root_logger.removeHandler(handler)
+
+# Configure basic logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+
+# Create and configure module logger
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 load_dotenv()
 PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
@@ -554,10 +572,30 @@ class ScoreWiseGrader:
                     page_num = page_result.get('page_number', 1)
                     transcript = page_result.get('transcript', '')
                     if transcript.strip():
-                        all_text += f"\n--- Page {page_num} (OCR) ---\n{transcript.strip()}"
-            
+                        all_text += f"\n--- Page {page_num} (OCR) ---\n{transcript.strip()}\n"
+                
                 if all_text.strip():
                     logger.info(f"✓ OCR extracted text from {len(result['results'])} pages")
+                    return all_text.strip()
+                else:
+                    logger.warning("OCR completed but no text was extracted")
+                    return "OCR processing completed but no text was extracted"
+            
+            # Handle direct API response format (from your attached files)
+            elif 'documents' in result:
+                all_text = ""
+                for doc in result['documents']:
+                    if 'data' in doc:
+                        for page_data in doc['data']:
+                            page_num = page_data.get('page_number', 1)
+                            content = page_data.get('content', '')
+                            if content.strip():
+                                # Clean up the OCR content for better readability
+                                cleaned_content = self._clean_ocr_content(content)
+                                all_text += f"\n--- Page {page_num} (OCR) ---\n{cleaned_content}\n"
+                
+                if all_text.strip():
+                    logger.info(f"✓ OCR extracted text from document")
                     return all_text.strip()
                 else:
                     logger.warning("OCR completed but no text was extracted")
@@ -565,10 +603,30 @@ class ScoreWiseGrader:
             else:
                 logger.warning(f"Unexpected OCR result format: {result}")
                 return str(result)
-            
+                
         except Exception as e:
             logger.error(f"Error extracting text from OCR result: {str(e)}")
             return ""
+
+    def _clean_ocr_content(self, content: str) -> str:
+        """
+        Clean and format OCR content for better AI grader readability.
+        """
+        # Remove excessive unicode characters and formatting
+        content = content.replace('\u2081', '1').replace('\u2082', '2')
+        content = content.replace('\u207b', '-').replace('\u2076', '6')
+        content = content.replace('\u2079', '9').replace('\u00b2', '^2')
+        content = content.replace('\u00b5', 'µ')
+        
+        # Add line breaks for better structure
+        content = content.replace('. ', '.\n')
+        content = content.replace('? ', '?\n')
+        content = content.replace(': ', ':\n')
+        
+        # Clean up multiple newlines
+        content = re.sub(r'\n\s*\n', '\n\n', content)
+        
+        return content.strip()
 
     async def extract_text_with_ocr_fallback(self, file_path: str) -> str:
         """
@@ -595,8 +653,9 @@ class ScoreWiseGrader:
                 logger.info(f"✓ Standard text extraction successful for {os.path.basename(file_path)}")
                 return text_content.strip()
             else:
+                print(f"⚠️ FALLBACK TO OCR: {os.path.basename(file_path)}")  # Temporary debug
                 logger.info(f"⚠️ Low text quality detected, falling back to OCR for {os.path.basename(file_path)}")
-            
+      
         except Exception as e:
             logger.warning(f"Standard text extraction failed: {str(e)}, falling back to OCR")
 
