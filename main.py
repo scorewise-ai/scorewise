@@ -433,14 +433,31 @@ async def dashboard_status(request: Request, db: Session = Depends(get_db)):
     if isinstance(user, RedirectResponse):
         raise HTTPException(status_code=401, detail="Authentication required")
     
-    # Check for recently completed assignments
+    # Get all assignments for this user from the last hour
+    recent_cutoff = datetime.now() - timedelta(hours=1)
+    
+    # Count recently completed assignments
     recent_completed = db.query(Assignment).filter(
         Assignment.user_id == user.id,
         Assignment.status == "completed",
-        Assignment.completed_at > datetime.now() - timedelta(minutes=10)
+        Assignment.completed_at > recent_cutoff
     ).count()
     
-    return {"has_completed_assignments": recent_completed > 0}
+    # Count currently processing assignments
+    currently_processing = db.query(Assignment).filter(
+        Assignment.user_id == user.id,
+        Assignment.status == "processing"
+    ).count()
+    
+    # Check if all recent processing assignments are now completed
+    all_processing_complete = currently_processing == 0
+    
+    return {
+        "has_completed_assignments": recent_completed > 0,
+        "all_processing_complete": all_processing_complete,
+        "completed_count": recent_completed,
+        "total_processing": currently_processing
+    }
 
 @app.post("/api/upload")
 async def upload_files(

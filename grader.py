@@ -52,17 +52,23 @@ class PDFReport(FPDF):
     def __init__(self):
         super().__init__()
         self.set_auto_page_break(auto=True, margin=15)
-
         # Clear any existing font cache
         self.fonts = {}
         self.core_fonts = {}
-
+        
+        # Logo path - using the existing logo in static folder
+        self.logo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "scorewise_logo.png")
+        
         # Debug path information
         current_file = os.path.abspath(__file__)
         fonts_dir = os.path.join(os.path.dirname(current_file), "fonts")
+        static_dir = os.path.join(os.path.dirname(current_file), "static")
         
         logger.info(f"Current file: {current_file}")
         logger.info(f"Fonts directory: {fonts_dir}")
+        logger.info(f"Static directory: {static_dir}")
+        logger.info(f"Logo path: {self.logo_path}")
+        logger.info(f"Logo exists: {os.path.exists(self.logo_path)}")
         logger.info(f"Fonts directory exists: {os.path.exists(fonts_dir)}")
         
         if os.path.exists(fonts_dir):
@@ -83,24 +89,119 @@ class PDFReport(FPDF):
         self.add_page()
 
     def header(self):
-        self.set_font('DejaVu', 'B', 16)
-        self.cell(0, 10, 'ScoreWise AI Grading Report', 0, 1, 'C')
+        """Professional header with ScoreWise AI logo and branding"""
+        # Check if logo exists and add it
+        if os.path.exists(self.logo_path):
+            try:
+                # Add logo to the top-left
+                self.image(self.logo_path, x=10, y=8, w=25, h=15)  # Adjust dimensions as needed
+                
+                # Position text next to logo
+                self.set_xy(40, 8)  # Start text after logo
+                font_family = 'Arial' if hasattr(self, '_use_builtin_fonts') and self._use_builtin_fonts else 'DejaVu'
+                self.set_font(font_family, 'B', 18)
+                self.set_text_color(59, 130, 246)  # Blue color
+                self.cell(0, 8, 'ScoreWise AI', 0, 1, 'L')
+                
+                self.set_xy(40, 16)
+                self.set_font(font_family, '', 12)
+                self.set_text_color(100, 100, 100)  # Gray color
+                self.cell(0, 6, 'AI-Powered Assignment Grading', 0, 1, 'L')
+                
+                # Add separator line
+                self.ln(5)
+                self.set_draw_color(200, 200, 200)
+                self.line(10, 28, 200, 28)  # Horizontal line
+                self.ln(10)
+                
+            except Exception as e:
+                logger.warning(f"Could not add logo to PDF: {str(e)}")
+                # Fallback to text-based header
+                self._text_only_header()
+        else:
+            logger.warning(f"Logo file not found at: {self.logo_path}")
+            self._text_only_header()
+        
+        # Reset text color to black for content
+        self.set_text_color(0, 0, 0)
+    
+    def _text_only_header(self):
+        """Fallback header when logo is not available"""
+        font_family = 'Arial' if hasattr(self, '_use_builtin_fonts') and self._use_builtin_fonts else 'DejaVu'
+        self.set_font(font_family, 'B', 18)
+        self.set_text_color(59, 130, 246)  # Blue color
+        self.cell(0, 10, 'ScoreWise AI', 0, 1, 'C')
+        self.set_font(font_family, '', 12)
+        self.set_text_color(100, 100, 100)  # Gray color
+        self.cell(0, 6, 'AI-Powered Assignment Grading', 0, 1, 'C')
         self.ln(10)
+        # Reset text color
+        self.set_text_color(0, 0, 0)
 
     def chapter_title(self, title):
-        self.set_font('DejaVu', 'B', 14)
-        self.cell(0, 10, title, 0, 1, 'L')
+        """Enhanced chapter title with better styling"""
+        font_family = 'Arial' if hasattr(self, '_use_builtin_fonts') and self._use_builtin_fonts else 'DejaVu'
+        self.set_font(font_family, 'B', 14)
+        
+        # Add subtle background for chapter titles
+        self.set_fill_color(248, 250, 252)  # Very light gray
+        self.cell(0, 10, title, 0, 1, 'L', True)
         self.ln(2)
 
     def chapter_body(self, body):
-        self.set_font('DejaVu', '', 11)
+        """Enhanced chapter body with proper font selection"""
+        font_family = 'Arial' if hasattr(self, '_use_builtin_fonts') and self._use_builtin_fonts else 'DejaVu'
+        self.set_font(font_family, '', 11)
         self.multi_cell(0, 6, body)
         self.ln()
 
     def add_score_section(self, title, score, max_score=100):
-        self.set_font('DejaVu', 'B', 12)
-        self.cell(120, 8, title, 0, 0, 'L')
-        self.cell(0, 8, f"{score}%", 0, 1, 'R')
+        """Enhanced score section with color-coded performance indicators"""
+        font_family = 'Arial' if hasattr(self, '_use_builtin_fonts') and self._use_builtin_fonts else 'DejaVu'
+        
+        # Score background color based on performance
+        if score >= 90:
+            self.set_fill_color(220, 252, 231)  # Light green
+            self.set_text_color(22, 101, 52)    # Dark green
+        elif score >= 80:
+            self.set_fill_color(254, 249, 195)  # Light yellow
+            self.set_text_color(133, 77, 14)    # Dark yellow
+        elif score >= 70:
+            self.set_fill_color(255, 237, 213)  # Light orange
+            self.set_text_color(154, 52, 18)    # Dark orange
+        else:
+            self.set_fill_color(254, 226, 226)  # Light red
+            self.set_text_color(153, 27, 27)    # Dark red
+        
+        self.set_font(font_family, 'B', 12)
+        self.cell(120, 10, title, 0, 0, 'L', True)
+        self.cell(0, 10, f"{score}%", 0, 1, 'R', True)
+        
+        # Reset colors
+        self.set_text_color(0, 0, 0)
+        self.set_fill_color(255, 255, 255)
+
+    def create_professional_footer(self):
+        """Add a professional footer with branding"""
+        # Position footer at bottom of page
+        self.set_y(-20)
+        
+        # Draw a line above footer
+        self.set_draw_color(200, 200, 200)
+        self.line(10, self.get_y(), 200, self.get_y())
+        
+        self.ln(3)
+        
+        # Footer text
+        font_family = 'Arial' if hasattr(self, '_use_builtin_fonts') and self._use_builtin_fonts else 'DejaVu'
+        self.set_font(font_family, 'I', 9)
+        self.set_text_color(100, 100, 100)
+        
+        # Left side - branding
+        self.cell(0, 5, 'Generated by ScoreWise AI - Supporting Academic Excellence', 0, 0, 'C')
+        
+        # Reset colors
+        self.set_text_color(0, 0, 0)
 
 def get_poppler_path():
     if platform.system() == "Windows":
@@ -688,97 +789,126 @@ class ScoreWiseGrader:
         """
         return await self.extract_text_with_ocr_fallback(file_path)
 
-    async def generate_pdf_report(self, student_name: str, result: dict, 
-                                rubric: dict, subject: str, 
-                                assessment_type: str, output_path: str):
+    async def generate_pdf_report(self, student_name: str, result: dict,
+                                 rubric: dict, subject: str,
+                                 assessment_type: str, output_path: str):
         try:
             pdf = PDFReport()
-            # Student header with assessment type
-            pdf.chapter_title(f"Student: {student_name}")
-            pdf.chapter_title(f"Subject: {subject.title()} - {assessment_type.replace('_', ' ').title()}")
-            pdf.chapter_title(f"Date: {datetime.now().strftime('%B %d, %Y')}")
+            
+            # Student-facing header
+            pdf.chapter_title(f"Dear {student_name},")
+            pdf.chapter_body(f"Here is your feedback for the {subject.title()} {assessment_type.replace('_', ' ').title()} assignment completed on {datetime.now().strftime('%B %d, %Y')}.")
             pdf.ln(5)
-
-            # Overall score section
-            pdf.set_font('DejaVu', 'B', 16)
-            pdf.set_fill_color(230, 230, 250)
-            pdf.cell(0, 12, f"Overall Score: {result['overall_score']}%", 1, 1, 'C', 1)
-            pdf.ln(5)
-
-            # Grade interpretation
+            
+            # Overall score section with enhanced styling
+            font_family = 'Arial' if hasattr(pdf, '_use_builtin_fonts') and pdf._use_builtin_fonts else 'DejaVu'
+            pdf.set_font(font_family, 'B', 16)
+            
+            # Score-based background color
             score = result['overall_score']
             if score >= 90:
+                pdf.set_fill_color(220, 252, 231)  # Light green
+                pdf.set_text_color(22, 101, 52)    # Dark green
+            elif score >= 80:
+                pdf.set_fill_color(254, 249, 195)  # Light yellow
+                pdf.set_text_color(133, 77, 14)    # Dark yellow
+            elif score >= 70:
+                pdf.set_fill_color(255, 237, 213)  # Light orange
+                pdf.set_text_color(154, 52, 18)    # Dark orange
+            else:
+                pdf.set_fill_color(254, 226, 226)  # Light red
+                pdf.set_text_color(153, 27, 27)    # Dark red
+                
+            pdf.cell(0, 12, f"Your Overall Score: {score}%", 1, 1, 'C', 1)
+            pdf.set_text_color(0, 0, 0)  # Reset to black
+            pdf.ln(5)
+            
+            # Grade interpretation - student-facing
+            if score >= 90:
                 grade_letter = "A"
-                interpretation = "Excellent work!"
+                interpretation = "Excellent work! You've demonstrated outstanding understanding."
             elif score >= 80:
                 grade_letter = "B"
-                interpretation = "Good work!"
+                interpretation = "Good work! You show solid understanding of the concepts."
             elif score >= 70:
                 grade_letter = "C"
-                interpretation = "Satisfactory work."
+                interpretation = "Satisfactory work. You have a basic understanding with room for improvement."
             elif score >= 60:
                 grade_letter = "D"
-                interpretation = "Below expectations."
+                interpretation = "Your work shows some understanding, but needs significant improvement."
             else:
                 grade_letter = "F"
-                interpretation = "Needs significant improvement."
-            # Add note if OCR was used
+                interpretation = "Your work indicates you need additional support with these concepts."
+            
+            # Add note if OCR was used - student-facing
             if "(OCR)" in result.get('detailed_feedback', ''):
-                pdf.set_font('DejaVu', 'I', 10)
-                pdf.chapter_body("Note: This document contained handwritten content that was processed using OCR technology.")            
-            pdf.set_font('DejaVu', 'B', 14)
-            pdf.chapter_title(f"Letter Grade: {grade_letter} - {interpretation}")
-
+                pdf.set_font(font_family, 'I', 10)
+                pdf.chapter_body("Note: Your handwritten submission was processed using advanced text recognition technology. If any feedback seems unclear, please discuss it with your instructor.")
+                pdf.ln(3)
+            
+            pdf.set_font(font_family, 'B', 14)
+            pdf.chapter_title(f"Your Letter Grade: {grade_letter}")
+            pdf.set_font(font_family, '', 12)
+            pdf.chapter_body(interpretation)
             pdf.ln(5)
-
-            # Rubric breakdown
-            pdf.set_font('DejaVu', 'B', 14)
-            pdf.chapter_title("Detailed Score Breakdown:")
+            
+            # Rubric breakdown - student-facing with enhanced styling
+            pdf.set_font(font_family, 'B', 14)
+            pdf.chapter_title("Your Detailed Score Breakdown:")
+            pdf.set_font(font_family, '', 11)
+            pdf.chapter_body("Here's how you performed in each area:")
+            pdf.ln(3)
+            
             for criterion, score_val in result['rubric_scores'].items():
                 weight = rubric[criterion]['weight']
                 description = rubric[criterion]['description']
-                pdf.set_font('DejaVu', 'B', 12)
                 pdf.add_score_section(f"{criterion} ({weight*100:.0f}%)", score_val)
-                pdf.set_font('DejaVu', 'I', 10)
-                pdf.cell(0, 5, f" {description}", 0, 1, 'L')
+                pdf.set_font(font_family, 'I', 10)
+                pdf.cell(0, 5, f"  {description}", 0, 1, 'L')
                 pdf.ln(2)
+            
             pdf.ln(5)
-
-            # Feedback sections
+            
+            # Feedback sections - student-facing
             if result.get('feedback'):
-                pdf.set_font('DejaVu', 'B', 14)
+                pdf.set_font(font_family, 'B', 14)
                 pdf.chapter_title("Overall Feedback:")
-                pdf.set_font('DejaVu', '', 11)
+                pdf.set_font(font_family, '', 11)
                 pdf.chapter_body(result['feedback'])
             
             if result.get('strengths'):
-                pdf.set_font('DejaVu', 'B', 14)
-                pdf.chapter_title("Strengths Identified:")
-                pdf.set_font('DejaVu', '', 11)
+                pdf.set_font(font_family, 'B', 14)
+                pdf.chapter_title("What You Did Well:")
+                pdf.set_font(font_family, '', 11)
                 for strength in result['strengths']:
+                    # Ensure student-facing language
+                    if not strength.lower().startswith(('you ', 'your ')):
+                        strength = f"You {strength.lower()}"
                     pdf.chapter_body(f"• {strength}")
             
             if result.get('areas_for_improvement'):
-                pdf.set_font('DejaVu', 'B', 14)
-                pdf.chapter_title("Areas for Improvement:")
-                pdf.set_font('DejaVu', '', 11)
+                pdf.set_font(font_family, 'B', 14)
+                pdf.chapter_title("Areas for Growth:")
+                pdf.set_font(font_family, '', 11)
                 for improvement in result['areas_for_improvement']:
+                    # Ensure student-facing language
+                    if not improvement.lower().startswith(('you ', 'your ', 'consider ', 'try ')):
+                        improvement = f"You can work on {improvement.lower()}"
                     pdf.chapter_body(f"• {improvement}")
             
             if result.get('detailed_feedback'):
-                pdf.set_font('DejaVu', 'B', 14)
+                pdf.set_font(font_family, 'B', 14)
                 pdf.chapter_title("Detailed Analysis:")
-                pdf.set_font('DejaVu', '', 11)
+                pdf.set_font(font_family, '', 11)
                 pdf.chapter_body(result['detailed_feedback'])
             
-            # Footer
-            pdf.ln(10)
-            pdf.set_font('DejaVu', 'I', 9)
-            pdf.cell(0, 5, "Generated by ScoreWise AI - AI-Powered Assignment Grading", 0, 1, 'C')
+            # Professional footer with logo branding
+            pdf.create_professional_footer()
             
             # Save report
             pdf.output(output_path)
-            logger.info(f"✓ PDF report generated: {output_path}")
+            logger.info(f"✓ Student-facing PDF report with logo generated: {output_path}")
+            
         except Exception as e:
             logger.error(f"Error generating PDF report: {str(e)}")
             print(f"✗ Error generating PDF report: {str(e)}")
@@ -976,7 +1106,7 @@ class ScoreWiseGrader:
             ocr_note = "\nNote: This submission was processed using OCR technology from handwritten content. Please account for potential OCR errors in your evaluation."
 
         prompt = f"""
-You are an expert {subject} educator grading a {assessment_type.replace('_', ' ')} assignment.
+You are an expert {subject} educator providing feedback directly to a student on their {assessment_type.replace('_', ' ')} assignment.
 
 SCORING SCALE GUIDELINES:
 - 90-100: Excellent work with correct answers and clear understanding
@@ -998,12 +1128,15 @@ STUDENT SUBMISSION:
 
 {f"SOLUTION/ANSWER KEY: {solution_text[:1000]}" if solution_text else ""}
 
-Please provide:
+Please provide feedback DIRECTLY TO THE STUDENT using "you" and "your" language:
+
 1. A score (0-100) for each rubric criterion using the scale above
-2. Overall constructive feedback
-3. Specific strengths identified
-4. Areas for improvement
-5. Detailed comments on the work
+2. Overall constructive feedback addressed to the student
+3. Specific strengths you identified in their work
+4. Areas where they can improve
+5. Detailed comments about their work
+
+IMPORTANT: Write all feedback as if you are speaking directly to the student. Use "you," "your work," "you demonstrated," etc. Be encouraging and supportive while providing constructive guidance.
 
 Format your response as JSON with the following structure:
 {{
@@ -1011,17 +1144,16 @@ Format your response as JSON with the following structure:
 "criterion_name": score_number,
 ...
 }},
-"feedback": "Overall feedback summary",
-"detailed_feedback": "Detailed analysis of the work",
-"strengths": ["strength 1", "strength 2", ...],
-"improvements": ["improvement 1", "improvement 2", ...],
+"feedback": "Overall feedback summary addressed directly to the student",
+"detailed_feedback": "Detailed analysis written directly to the student",
+"strengths": ["Your strength 1", "Your strength 2", ...],
+"improvements": ["You can improve by...", "Consider working on...", ...],
 "confidence": 0.0-1.0
 }}
 
-Be fair and generous in your scoring. Reward correct reasoning, effort, and understanding. Focus on helping the student learn and improve in {subject}.{ocr_note}
+Be encouraging and supportive in your feedback. Address the student directly and help them understand what they did well and how they can continue to grow in {subject}.{ocr_note}
 """
         return prompt
-
 
     async def call_perplexity_api(self, prompt: str) -> Dict:
         if not self.api_key:

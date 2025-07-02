@@ -420,30 +420,72 @@
     </script>
     {% endif %}
     <script>
-    // Auto-refresh dashboard for processing assignments
+    // Enhanced auto-refresh logic that stops when all assignments are completed
     document.addEventListener('DOMContentLoaded', function() {
         const processingAssignments = document.querySelectorAll('[data-status="processing"]');
     
         if (processingAssignments.length > 0) {
-            // Poll every 10 seconds for updates
-            const pollInterval = setInterval(() => {
-                fetch('/api/dashboard-status')
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.has_completed_assignments) {
-                            clearInterval(pollInterval);
-                            window.location.reload();
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Status check failed:', error);
-                    });
-            }, 10000); // Check every 10 seconds
+            console.log(`Found ${processingAssignments.length} processing assignments. Starting polling...`);
         
-            // Stop polling after 7 minutes
-            setTimeout(() => {
-                clearInterval(pollInterval);
-            }, 420000);
+            let pollCount = 0;
+            const maxPolls = 180; // 30 minutes max (180 * 10 seconds)
+        
+            const pollInterval = setInterval(async () => {
+                pollCount++;
+            
+                try {
+                    const response = await fetch('/api/dashboard-status');
+                    const data = await response.json();
+                
+                    console.log(`Poll ${pollCount}: Checking status...`, data);
+                
+                    if (data.has_completed_assignments || data.all_processing_complete) {
+                        console.log('✓ All assignments completed. Stopping polling and refreshing page.');
+                        clearInterval(pollInterval);
+                        window.location.reload();
+                        return;
+                    }
+                
+                    // Optional: Update UI to show progress without full refresh
+                    if (data.completed_count && data.total_processing) {
+                        console.log(`Progress: ${data.completed_count}/${data.total_processing} completed`);
+                    }
+                
+                    // Stop after max attempts
+                    if (pollCount >= maxPolls) {
+                        console.log('⚠️ Polling timeout reached. Stopping automatic updates.');
+                        clearInterval(pollInterval);
+                    }
+                
+                } catch (error) {
+                    console.error('Status check failed:', error);
+                    // Don't stop polling on individual errors, just log them
+                }
+            }, 10000); // Poll every 10 seconds
+        
+            // Add visual indicator that polling is active
+            const indicator = document.createElement('div');
+            indicator.id = 'polling-indicator';
+            indicator.className = 'fixed top-4 right-4 bg-blue-500 text-white px-3 py-2 rounded shadow z-50';
+            indicator.innerHTML = `
+                <div class="flex items-center">
+                    <div class="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Checking for updates...
+                </div>
+        `    ;
+            document.body.appendChild(indicator);
+        
+            // Remove indicator when polling stops
+            const originalClearInterval = window.clearInterval;
+            window.clearInterval = function(id) {
+                if (id === pollInterval) {
+                    const indicator = document.getElementById('polling-indicator');
+                    if (indicator) {
+                        indicator.remove();
+                    }
+                }
+                originalClearInterval(id);
+            };
         }
     });
     </script>
