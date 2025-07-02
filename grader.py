@@ -904,7 +904,7 @@ class ScoreWiseGrader:
             }
     
     def create_grading_prompt(self, assignment_text: str, submission_text: str,
-                             solution_text: str, rubric: Dict, subject: str, 
+                             solution_text: str, rubric: Dict, subject: str,
                              assessment_type: str) -> str:
         rubric_text = "\n".join([
             f"- {criterion} ({details['weight']*100:.0f}%): {details['description']}"
@@ -915,45 +915,54 @@ class ScoreWiseGrader:
         ocr_note = ""
         if "(OCR)" in submission_text:
             ocr_note = "\nNote: This submission was processed using OCR technology from handwritten content. Please account for potential OCR errors in your evaluation."
-        
+
         prompt = f"""
-        You are an expert {subject} educator grading a {assessment_type.replace('_', ' ')} assignment.
-        Please provide detailed, constructive feedback and accurate scoring. 
-        
-        ASSIGNMENT INSTRUCTIONS:
-        {assignment_text[:2000]}
-        
-        GRADING RUBRIC:
-        {rubric_text}
-        
-        STUDENT SUBMISSION:
-        {submission_text[:3000]}
-        
-        {f"SOLUTION/ANSWER KEY: {solution_text[:1000]}" if solution_text else ""}
-        
-        Please provide:
-        1. A score (0-100) for each rubric criterion
-        2. Overall constructive feedback
-        3. Specific strengths identified
-        4. Areas for improvement
-        5. Detailed comments on the work
-        
-        Format your response as JSON with the following structure:
-        {{
-            "scores": {{
-                "criterion_name": score_number,
-                ...
-            }},
-            "feedback": "Overall feedback summary",
-            "detailed_feedback": "Detailed analysis of the work",
-            "strengths": ["strength 1", "strength 2", ...],
-            "improvements": ["improvement 1", "improvement 2", ...],
-            "confidence": 0.0-1.0
-        }}
-        
-        Be fair, constructive, and specific in your feedback. Focus on helping the student learn and improve in {subject}. Reward correct reasoning and effort, and avoid harsh penalties for minor mistakes or presentation issues.
-        """
+You are an expert {subject} educator grading a {assessment_type.replace('_', ' ')} assignment.
+
+SCORING SCALE GUIDELINES:
+- 90-100: Excellent work with correct answers and clear understanding
+- 80-89: Good work with mostly correct answers and solid understanding  
+- 70-79: Satisfactory work with adequate understanding, some errors
+- 60-69: Below expectations with significant errors or misunderstanding
+- Below 60: Major problems with fundamental misunderstanding
+
+IMPORTANT: If a student demonstrates correct understanding, gets most answers right, and shows their work clearly, assign scores in the 85-95 range. Only use scores below 70 for work with fundamental errors or major misunderstandings.
+
+ASSIGNMENT INSTRUCTIONS:
+{assignment_text[:2000]}
+
+GRADING RUBRIC:
+{rubric_text}
+
+STUDENT SUBMISSION:
+{submission_text[:3000]}
+
+{f"SOLUTION/ANSWER KEY: {solution_text[:1000]}" if solution_text else ""}
+
+Please provide:
+1. A score (0-100) for each rubric criterion using the scale above
+2. Overall constructive feedback
+3. Specific strengths identified
+4. Areas for improvement
+5. Detailed comments on the work
+
+Format your response as JSON with the following structure:
+{{
+"scores": {{
+"criterion_name": score_number,
+...
+}},
+"feedback": "Overall feedback summary",
+"detailed_feedback": "Detailed analysis of the work",
+"strengths": ["strength 1", "strength 2", ...],
+"improvements": ["improvement 1", "improvement 2", ...],
+"confidence": 0.0-1.0
+}}
+
+Be fair and generous in your scoring. Reward correct reasoning, effort, and understanding. Focus on helping the student learn and improve in {subject}.{ocr_note}
+"""
         return prompt
+
 
     async def call_perplexity_api(self, prompt: str) -> Dict:
         if not self.api_key:

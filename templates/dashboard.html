@@ -5,447 +5,415 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - ScoreWise AI</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
-    <link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16x16.png">
-    <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32x32.png">
-    <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
+    <link rel="stylesheet" href="/static/style.css">
 </head>
 <body class="bg-gray-50 min-h-screen">
     <!-- Navigation -->
     <nav class="bg-white shadow-sm border-b">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex justify-between items-center h-16">
+            <div class="flex justify-between h-16">
                 <div class="flex items-center">
                     <a href="/" class="text-xl font-bold text-blue-600">ScoreWise AI</a>
                 </div>
                 <div class="flex items-center space-x-4">
                     <a href="/upload" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">Upload Assignment</a>
-                    <a href="/pricing" class="text-blue-600 hover:text-blue-700">Pricing</a>
                     <span class="text-gray-700">{{ user.email }}</span>
-                    <form method="POST" action="/auth/logout" class="inline">
-                        <button type="submit" class="text-gray-600 hover:text-gray-700">Logout</button>
+                    <form method="post" action="/auth/logout" class="inline">
+                        <button type="submit" class="text-gray-500 hover:text-gray-700">Logout</button>
                     </form>
                 </div>
             </div>
         </div>
     </nav>
 
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <!-- Usage Summary Card -->
+    <div class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+        <!-- Success Message -->
+        {% if request.query_params.get('status') == 'upload_success' %}
+        <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
+            Assignment uploaded successfully! Processing has started.
+        </div>
+        {% endif %}
+
+        <!-- Usage Summary -->
         {% if usage_summary %}
-        <div class="bg-white rounded-lg shadow mb-8">
-            <div class="px-6 py-4 border-b border-gray-200">
-                <h2 class="text-lg font-semibold text-gray-900">Plan Usage</h2>
-            </div>
-            <div class="p-6">
-                <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div class="bg-white overflow-hidden shadow rounded-lg mb-6">
+            <div class="px-4 py-5 sm:p-6">
+                <h3 class="text-lg leading-6 font-medium text-gray-900 mb-4">
+                    {{ usage_summary.tier_name }} Plan - Usage Summary
+                </h3>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div class="text-center">
-                        <div class="text-2xl font-bold text-blue-600">{{ usage_summary.tier }}</div>
-                        <div class="text-sm text-gray-500">Current Plan</div>
-                        {% if usage_summary.tier == 'Free Trial' %}
-                            <div class="mt-2">
-                                <a href="/pricing" class="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full hover:bg-blue-200">
-                                    Upgrade Now
-                                </a>
-                            </div>
-                        {% endif %}
-                    </div>
-                    <div class="text-center">
-                        <div class="text-2xl font-bold text-gray-900">
-                            {{ usage_summary.assignments_used }} / {{ usage_summary.assignments_limit }}
-                        </div>
-                        <div class="text-sm text-gray-500">Assignments This Month</div>
-                        {% if usage_summary.assignments_limit != 'Unlimited' and usage_summary.assignments_used >= usage_summary.assignments_limit * 0.8 %}
-                            <div class="text-xs text-orange-600 mt-1">Approaching Limit</div>
-                        {% endif %}
-                    </div>
-                    <div class="text-center">
-                        <div class="text-2xl font-bold text-gray-900">{{ usage_summary.submissions_per_assignment_limit }}</div>
-                        <div class="text-sm text-gray-500">Max Submissions</div>
-                    </div>
-                    <div class="text-center">
-                        <div class="text-2xl font-bold capitalize 
-                            {% if usage_summary.status == 'active' %}text-green-600
-                            {% elif usage_summary.status == 'trialing' %}text-blue-600
-                            {% else %}text-red-600{% endif %}">
-                            {{ usage_summary.status }}
-                        </div>
-                        <div class="text-sm text-gray-500">Status</div>
-                    </div>
-                </div>
-
-                <!-- Usage Progress Bar -->
-                {% if usage_summary.assignments_limit != 'Unlimited' %}
-                <div class="mt-6">
-                    <div class="flex justify-between text-sm text-gray-600 mb-1">
-                        <span>Monthly Usage</span>
-                        <span>{{ usage_summary.assignments_used }} / {{ usage_summary.assignments_limit }}</span>
-                    </div>
-                    <div class="w-full bg-gray-200 rounded-full h-2">
-                        {% set usage_percent = (usage_summary.assignments_used / usage_summary.assignments_limit * 100) %}
-                        <div class="h-2 rounded-full 
-                            {% if usage_percent >= 90 %}bg-red-500
-                            {% elif usage_percent >= 75 %}bg-yellow-500
-                            {% else %}bg-green-500{% endif %}"
-                            style="width: {{ usage_percent }}%">
+                        <div class="text-2xl font-bold text-blue-600">{{ usage_summary.assignments_used }}</div>
+                        <div class="text-sm text-gray-500">
+                            of {{ usage_summary.assignments_limit if usage_summary.assignments_limit != -1 else "unlimited" }} assignments
                         </div>
                     </div>
-                </div>
-                {% endif %}
-
-                <!-- Feature Access -->
-                <div class="mt-6 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                    {% for feature, enabled in usage_summary.features.items() %}
-                    <div class="flex items-center">
-                        {% if enabled %}
-                            <svg class="h-4 w-4 text-green-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path>
-                            </svg>
-                        {% else %}
-                            <svg class="h-4 w-4 text-red-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"></path>
-                            </svg>
-                        {% endif %}
-                        <span class="capitalize">{{ feature.replace('_', ' ') }}</span>
+                    <div class="text-center">
+                        <div class="text-2xl font-bold text-green-600">{{ usage_summary.submissions_processed }}</div>
+                        <div class="text-sm text-gray-500">submissions processed</div>
                     </div>
-                    {% endfor %}
+                    <div class="text-center">
+                        <div class="text-2xl font-bold text-purple-600">{{ usage_summary.days_remaining }}</div>
+                        <div class="text-sm text-gray-500">days remaining</div>
+                    </div>
                 </div>
-
-                {% if usage_summary.period_end %}
-                <div class="mt-4 text-sm text-gray-600">
-                    {% if usage_summary.status == 'trialing' %}
-                        Trial ends: {{ usage_summary.period_end.strftime('%B %d, %Y') }}
-                    {% else %}
-                        Next billing: {{ usage_summary.period_end.strftime('%B %d, %Y') }}
-                    {% endif %}
-                </div>
-                {% endif %}
             </div>
         </div>
         {% endif %}
 
-        <!-- Action Buttons -->
-        <div class="flex justify-between items-center mb-8">
-            <h1 class="text-2xl font-bold text-gray-900">Your Assignments</h1>
-            <div class="flex space-x-3">
-                {% if usage_summary and usage_summary.assignments_limit != 'Unlimited' and usage_summary.assignments_used >= usage_summary.assignments_limit %}
-                    <a href="/pricing" class="bg-orange-600 text-white px-4 py-2 rounded-md hover:bg-orange-700">
-                        Upgrade to Continue
-                    </a>
-                {% else %}
-                    <a href="/upload" class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">
-                        Upload New Assignment
-                    </a>
-                {% endif %}
-                {% if user.subscription_tier != 'trial' %}
-                    <a href="/api/create-customer-portal-session" class="bg-gray-600 text-white px-4 py-2 rounded-md hover:bg-gray-700">
-                        Manage Subscription
-                    </a>
-                {% endif %}
+        <!-- Basic Analytics -->
+        {% if show_basic_analytics and basic_analytics %}
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+            <div class="bg-white overflow-hidden shadow rounded-lg">
+                <div class="p-5">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <div class="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center">
+                                <span class="text-white font-bold">Avg</span>
+                            </div>
+                        </div>
+                        <div class="ml-5 w-0 flex-1">
+                            <dl>
+                                <dt class="text-sm font-medium text-gray-500 truncate">Average Score</dt>
+                                <dd class="text-lg font-medium text-gray-900">{{ basic_analytics.average_score }}%</dd>
+                            </dl>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white overflow-hidden shadow rounded-lg">
+                <div class="p-5">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <div class="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
+                                <span class="text-white font-bold">#</span>
+                            </div>
+                        </div>
+                        <div class="ml-5 w-0 flex-1">
+                            <dl>
+                                <dt class="text-sm font-medium text-gray-500 truncate">Total Assignments</dt>
+                                <dd class="text-lg font-medium text-gray-900">{{ basic_analytics.total_assignments }}</dd>
+                            </dl>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white overflow-hidden shadow rounded-lg">
+                <div class="p-5">
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <div class="w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center">
+                                <span class="text-white font-bold">A</span>
+                            </div>
+                        </div>
+                        <div class="ml-5 w-0 flex-1">
+                            <dl>
+                                <dt class="text-sm font-medium text-gray-500 truncate">A Grades</dt>
+                                <dd class="text-lg font-medium text-gray-900">{{ basic_analytics.grade_distribution.A }}</dd>
+                            </dl>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
+        {% endif %}
 
-        <!-- Success Message -->
-        {% if request.query_params.get('status') == 'upload_success' %}
-        <div class="bg-green-50 border border-green-200 rounded-md p-4 mb-6">
-            <div class="flex">
-                <div class="flex-shrink-0">
-                    <svg class="h-5 w-5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
-                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
-                    </svg>
+        <!-- Advanced Analytics -->
+        {% if show_advanced_analytics and advanced_analytics %}
+        <div class="mb-6">
+            <h2 class="text-2xl font-bold text-gray-900 mb-4">Advanced Analytics</h2>
+            
+            <!-- Score Overview -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <h3 class="text-sm font-medium text-gray-500">Highest Score</h3>
+                    <p class="text-2xl font-bold text-green-600">{{ advanced_analytics.highest_score }}%</p>
                 </div>
-                <div class="ml-3">
-                    <p class="text-sm font-medium text-green-800">
-                        Assignment uploaded successfully! Processing has started.
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <h3 class="text-sm font-medium text-gray-500">Lowest Score</h3>
+                    <p class="text-2xl font-bold text-red-600">{{ advanced_analytics.lowest_score }}%</p>
+                </div>
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <h3 class="text-sm font-medium text-gray-500">Total Submissions</h3>
+                    <p class="text-2xl font-bold text-blue-600">{{ advanced_analytics.total_submissions }}</p>
+                </div>
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <h3 class="text-sm font-medium text-gray-500">Predicted Next Score</h3>
+                    <p class="text-2xl font-bold text-purple-600">
+                        {% if advanced_analytics.predicted_score %}{{ advanced_analytics.predicted_score }}%{% else %}N/A{% endif %}
                     </p>
                 </div>
             </div>
-        </div>
-        {% endif %}
 
-        {% if show_basic_analytics and basic_analytics %}
-        <div class="bg-white rounded-lg shadow mb-8 p-6 col-start-9 col-span-4">
-                <h2 class="text-lg font-semibold text-gray-900 mb-2">Assignment Analytics</h2>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <div>
-                                <div class="text-2xl font-bold text-blue-600">
-                                        {{ basic_analytics.average_score if basic_analytics.average_score is not none else 'N/A' }}
-                                </div>
-                                <div class="text-sm text-gray-500">Avg. Assignment Score</div>
-                        </div>
-                        <div>
-                                <div class="text-2xl font-bold text-green-600">
-                                        {{ basic_analytics.total_assignments }}
-                                </div>
-                                <div class="text-sm text-gray-500">Assignments Graded</div>
-                        </div>
-                        <div>
-                                <div class="text-sm font-bold text-purple-600">
-                                        Grade Distribution:
-                                        {% for grade, count in basic_analytics.grade_distribution.items() %}
-                                                {{ grade }}: {{ count }}{% if not loop.last %}, {% endif %}
-                                        {% endfor %}
-                                </div>
-                        </div>
-                </div>
-        </div>
-        {% endif %}
-
-        {% if show_advanced_analytics and advanced_analytics %}
-        <div class="bg-blue-50 rounded-lg shadow mb-8 p-6 col-start-9 col-span-4">
-                <h2 class="text-lg font-semibold text-blue-900 mb-4">Advanced Analytics</h2>
-                <div class="mb-6">
-                        <canvas id="scoreHistogram" height="120"></canvas>
-                        <div class="text-xs text-gray-500 text-center mt-1">Score Distribution (All Submissions)</div>
-                </div>
-                <div class="mb-6">
-                        <canvas id="trendLine" height="120"></canvas>
-                        <div class="text-xs text-gray-500 text-center mt-1">Assignment Scores Over Time</div>
-                </div>
-                {% if advanced_analytics.rubric_averages %}
-                <div class="mb-6">
-                        <canvas id="rubricRadar" height="120"></canvas>
-                        <div class="text-xs text-gray-500 text-center mt-1">Average Rubric Performance</div>
-                </div>
-                {% endif %}
-        </div>
-        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-        <script>
-                // Score Histogram
-                const histCtx = document.getElementById('scoreHistogram').getContext('2d');
-                const histData = {{ advanced_analytics.score_distribution | tojson }};
-                const histBins = [0,10,20,30,40,50,60,70,80,90,100];
-                const histCounts = Array(histBins.length-1).fill(0);
-                histData.forEach(score => {
-                        for(let i=0;i<histBins.length-1;i++){
-                                if(score >= histBins[i] && score < histBins[i+1]) {
-                                        histCounts[i]++;
-                                        break;
-                                }
-                        }
-                        if(score === 100) histCounts[histCounts.length-1]++;
-                });
-                new Chart(histCtx, {
-                        type: 'bar',
-                        data: {
-                                labels: histBins.slice(0,-1).map((b,i)=>`${b}-${histBins[i+1]}`),
-                                datasets: [{
-                                        label: 'Submissions',
-                                        data: histCounts,
-                                        backgroundColor: '#2563eb'
-                                }]
-                        },
-                        options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
-                });
-
-                // Strengths & Improvements
-                {% if advanced_analytics.top_strengths or advanced_analytics.top_improvements %}
-                <div class="mb-6">
-                    <div class="bg-white rounded-lg p-4 shadow">
-                        <h3 class="text-md font-semibold text-green-700 mb-2">Most Common Strengths</h3>
-                        <ul class="list-disc ml-6 text-green-900">
-                            {% for s in advanced_analytics.top_strengths %}
-                                <li>{{ s }}</li>
-                            {% endfor %}
-                        </ul>
-                        <h3 class="text-md font-semibold text-red-700 mt-4 mb-2">Most Common Areas for Improvement</h3>
-                        <ul class="list-disc ml-6 text-red-900">
-                            {% for s in advanced_analytics.top_improvements %}
-                                <li>{{ s }}</li>
-                            {% endfor %}
-                        </ul>
-                    </div>
-                </div>
-                {% endif %}
-
-                // Trend Line
-                const trendCtx = document.getElementById('trendLine').getContext('2d');
-                const trendScores = {{ advanced_analytics.score_distribution | tojson }};
-                const trendDates = {{ advanced_analytics.assignment_dates | tojson }};
-                new Chart(trendCtx, {
-                        type: 'line',
-                        data: {
-                                labels: trendDates,
-                                datasets: [{
-                                        label: 'Score',
-                                        data: trendScores,
-                                        borderColor: '#2563eb',
-                                        backgroundColor: 'rgba(37,99,235,0.1)',
-                                        tension: 0.2,
-                                        fill: true,
-                                        pointRadius: 3
-                                }]
-                        },
-                        options: {
-                                plugins: { legend: { display: false } },
-                                scales: { y: { beginAtZero: true, max: 100 } }
-                        }
-                });
-
-                // Rubric Radar
-                {% if advanced_analytics.rubric_averages %}
-                const radarCtx = document.getElementById('rubricRadar').getContext('2d');
-                const rubricLabels = Object.keys({{ advanced_analytics.rubric_averages | tojson }});
-                const rubricData = Object.values({{ advanced_analytics.rubric_averages | tojson }});
-                new Chart(radarCtx, {
-                        type: 'radar',
-                        data: {
-                                labels: rubricLabels,
-                                datasets: [{
-                                        label: 'Avg. Score',
-                                        data: rubricData,
-                                        backgroundColor: 'rgba(59,130,246,0.2)',
-                                        borderColor: '#2563eb',
-                                        pointBackgroundColor: '#2563eb'
-                                }]
-                        },
-                        options: {
-                                scales: { r: { min: 0, max: 100 } }
-                        }
-                });
-                {% endif %}
-
-                // Predictive Analytics
-                {% if advanced_analytics.predicted_score %}
-                <div class="mb-6">
-                    <div class="bg-yellow-50 rounded-lg p-4 shadow">
-                        <h3 class="text-md font-semibold text-yellow-700 mb-2">Predictive Analytics</h3>
-                        <p class="text-yellow-900">
-                            Projected next assignment score: 
-                            <span class="font-bold">{{ advanced_analytics.predicted_score }}</span>
-                            {% if advanced_analytics.predicted_score < 70 %}
-                                <span class="text-red-600 font-semibold">(At risk of underperformance)</span>
-                            {% elif advanced_analytics.predicted_score < 85 %}
-                                <span class="text-orange-600 font-semibold">(Monitor progress)</span>
-                            {% else %}
-                                <span class="text-green-600 font-semibold">(On track)</span>
-                            {% endif %}
-                        </p>
-                    </div>
-                </div>
-                {% endif %}
-        </script>
-        {% endif %}
-
-        <!-- Assignments Table -->
-        <div class="bg-white shadow rounded-lg">
-            <div class="px-6 py-4 border-b border-gray-200">
-                <h3 class="text-lg font-medium text-gray-900">Recent Assignments</h3>
-            </div>
-            
-            {% if assignments %}
-            <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-50">
-                        <tr>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Subject</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Submissions</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody class="bg-white divide-y divide-gray-200">
-                        {% for assignment in assignments %}
-                        <tr>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">
-                                {{ assignment.id[:8] }}...
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 capitalize">
-                                {{ assignment.subject.replace('_', ' ') }}
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 capitalize">
-                                {{ assignment.assessment_type.replace('_', ' ') }}
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap">
-                                {% if assignment.status == 'completed' %}
-                                    <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
-                                        Completed
-                                    </span>
-                                {% elif assignment.status == 'processing' %}
-                                    <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">
-                                        Processing
-                                    </span>
-                                {% else %}
-                                    <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">
-                                        Error
-                                    </span>
-                                {% endif %}
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                {{ assignment.submissions_count }}
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                {{ assignment.created_at.strftime('%Y-%m-%d') }}
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                {% if assignment.status == 'completed' and assignment.reports_zip_path %}
-                                    <a href="/api/download-reports/{{ assignment.id }}" class="text-blue-600 hover:text-blue-900">
-                                        Download
-                                    </a>
-                                {% elif assignment.status == 'processing' %}
-                                    <span class="text-gray-400">Processing...</span>
-                                {% else %}
-                                    <span class="text-red-600">Failed</span>
-                                {% endif %}
-                            </td>
-                        </tr>
+            <!-- Strengths & Improvements -->
+            {% if advanced_analytics.top_strengths or advanced_analytics.top_improvements %}
+            <div class="mb-6">
+                <div class="bg-white rounded-lg p-4 shadow">
+                    <h3 class="text-md font-semibold text-green-700 mb-2">Most Common Strengths</h3>
+                    <ul class="list-disc ml-6 text-green-900">
+                        {% for s in advanced_analytics.top_strengths %}
+                            <li>{{ s }}</li>
                         {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% else %}
-            <div class="text-center py-12">
-                <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                </svg>
-                <h3 class="mt-2 text-sm font-medium text-gray-900">No assignments yet</h3>
-                <p class="mt-1 text-sm text-gray-500">Upload your first assignment to get started with AI-powered grading</p>
-                <div class="mt-6">
-                    <a href="/upload" class="inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-blue-600 hover:bg-blue-700">
-                        Upload Assignment
-                    </a>
+                    </ul>
+                    <h3 class="text-md font-semibold text-red-700 mt-4 mb-2">Most Common Areas for Improvement</h3>
+                    <ul class="list-disc ml-6 text-red-900">
+                        {% for s in advanced_analytics.top_improvements %}
+                            <li>{{ s }}</li>
+                        {% endfor %}
+                    </ul>
                 </div>
             </div>
             {% endif %}
-        </div>
 
-        <!-- Recent Activity -->
-        <div class="mt-8 bg-white shadow rounded-lg">
-            <div class="px-6 py-4 border-b border-gray-200">
-                <h3 class="text-lg font-medium text-gray-900">Recent Activity</h3>
-            </div>
-            <div class="p-6">
-                <div class="text-sm text-gray-500">
-                    {% if assignments %}
-                        Last assignment: {{ assignments[0].created_at.strftime('%B %d, %Y at %I:%M %p') }}
-                    {% else %}
-                        No recent activity
-                    {% endif %}
+            <!-- Charts -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <!-- Score Distribution Chart -->
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <h3 class="text-lg font-semibold mb-4">Score Distribution</h3>
+                    <div class="relative h-64">
+                        <canvas id="scoreDistChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Rubric Performance Chart -->
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <h3 class="text-lg font-semibold mb-4">Average Rubric Performance</h3>
+                    <div class="relative h-64">
+                        <canvas id="rubricChart"></canvas>
+                    </div>
                 </div>
             </div>
         </div>
+        {% endif %}
+
+        <!-- Recent Assignments -->
+        <div class="bg-white shadow overflow-hidden sm:rounded-md">
+            <div class="px-4 py-5 sm:px-6">
+                <h3 class="text-lg leading-6 font-medium text-gray-900">Recent Assignments</h3>
+                <p class="mt-1 max-w-2xl text-sm text-gray-500">Your latest grading tasks</p>
+            </div>
+            <ul class="divide-y divide-gray-200">
+                {% if assignments %}
+                    {% for assignment in assignments %}
+                    <li class="px-4 py-4 sm:px-6">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center">
+                                <div class="flex-shrink-0">
+                                    {% if assignment.status == 'completed' %}
+                                        <div class="w-2 h-2 bg-green-400 rounded-full"></div>
+                                    {% elif assignment.status == 'processing' %}
+                                        <div class="w-2 h-2 bg-yellow-400 rounded-full"></div>
+                                    {% else %}
+                                        <div class="w-2 h-2 bg-red-400 rounded-full"></div>
+                                    {% endif %}
+                                </div>
+                                <div class="ml-4">
+                                    <div class="text-sm font-medium text-gray-900">
+                                        {{ assignment.subject.replace('_', ' ').title() }} - {{ assignment.assessment_type.replace('_', ' ').title() }}
+                                    </div>
+                                    <div class="text-sm text-gray-500">
+                                        {{ assignment.submissions_count }} submissions • {{ assignment.created_at.strftime('%Y-%m-%d %H:%M') }}
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="flex items-center space-x-2">
+                                {% if assignment.status == 'completed' and assignment.reports_zip_path %}
+                                    <a href="/api/download-reports/{{ assignment.id }}" 
+                                       class="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700">
+                                        Download Reports
+                                    </a>
+                                {% elif assignment.status == 'processing' %}
+                                    <span class="text-yellow-600 text-sm">Processing...</span>
+                                {% else %}
+                                    <span class="text-red-600 text-sm">Failed</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </li>
+                    {% endfor %}
+                {% else %}
+                    <li class="px-4 py-4 sm:px-6 text-center text-gray-500">
+                        <p>No assignments yet.</p>
+                        <a href="/upload" class="text-blue-600 hover:text-blue-800">Upload your first assignment</a>
+                        <p>to get started with AI-powered grading</p>
+                    </li>
+                {% endif %}
+            </ul>
+        </div>
     </div>
 
+    <!-- Charts JavaScript -->
+    {% if show_advanced_analytics and advanced_analytics %}
     <script>
-        // Auto-refresh processing assignments
-        function checkProcessingAssignments() {
-            const processingRows = document.querySelectorAll('tbody tr');
-            processingRows.forEach(row => {
-                const statusCell = row.querySelector('td:nth-child(4) span');
-                if (statusCell && statusCell.textContent.trim() === 'Processing') {
-                    // Refresh page every 30 seconds if there are processing assignments
-                    setTimeout(() => {
-                        window.location.reload();
-                    }, 30000);
-                }
-            });
+        // Prepare data for charts
+        const scoreData = {{ advanced_analytics.score_distribution | tojson }};
+        const rubricLabels = {{ advanced_analytics.rubric_averages.keys() | list | tojson }};
+        const rubricValues = {{ advanced_analytics.rubric_averages.values() | list | tojson }};
+
+        console.log('Chart data:', { scoreData, rubricLabels, rubricValues }); // Debug output
+
+        // Function to create histogram bins from score data
+        function createHistogramBins(scores, binCount = 5) {
+            if (!scores || scores.length === 0) {
+                return { labels: [], data: [] };
+            }
+            
+            const min = Math.min(...scores);
+            const max = Math.max(...scores);
+            const binSize = (max - min) / binCount;
+            
+            const bins = [];
+            const labels = [];
+            
+            for (let i = 0; i < binCount; i++) {
+                const binMin = min + (i * binSize);
+                const binMax = min + ((i + 1) * binSize);
+                labels.push(`${Math.round(binMin)}-${Math.round(binMax)}%`);
+                
+                // Count scores in this bin
+                const count = scores.filter(score => {
+                    if (i === binCount - 1) {
+                        // Include max value in last bin
+                        return score >= binMin && score <= binMax;
+                    } else {
+                        return score >= binMin && score < binMax;
+                    }
+                }).length;
+                bins.push(count);
+            }
+            
+            return { labels, data: bins };
         }
 
-        checkProcessingAssignments();
-    </script>
+        // Score Distribution Chart (using bar chart to create histogram)
+        const scoreDistCtx = document.getElementById('scoreDistChart');
+        if (scoreDistCtx && scoreData && scoreData.length > 0) {
+            const histogramData = createHistogramBins(scoreData);
+            
+            new Chart(scoreDistCtx, {
+                type: 'bar',
+                data: {
+                    labels: histogramData.labels,
+                    datasets: [{
+                        label: 'Number of Students',
+                        data: histogramData.data,
+                        backgroundColor: 'rgba(59, 130, 246, 0.6)',
+                        borderColor: 'rgba(59, 130, 246, 1)',
+                        borderWidth: 1,
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        title: {
+                            display: true,
+                            text: 'Score Distribution'
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Score Range (%)'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Number of Students'
+                            },
+                            beginAtZero: true,
+                            ticks: {
+                                stepSize: 1
+                            }
+                        }
+                    }
+                }
+            });
+        } else {
+            document.getElementById('scoreDistChart').parentElement.innerHTML = 
+                '<div class="flex items-center justify-center h-64 text-gray-500">No score data available</div>';
+        }
 
+        // Rubric Performance Chart (radar)
+        const rubricCtx = document.getElementById('rubricChart');
+        if (rubricCtx && rubricLabels && rubricLabels.length > 0 && rubricValues && rubricValues.length > 0) {
+            new Chart(rubricCtx, {
+                type: 'radar',
+                data: {
+                    labels: rubricLabels,
+                    datasets: [{
+                        label: 'Average Performance (%)',
+                        data: rubricValues,
+                        backgroundColor: 'rgba(34, 197, 94, 0.2)',
+                        borderColor: 'rgba(34, 197, 94, 1)',
+                        borderWidth: 2,
+                        pointBackgroundColor: 'rgba(34, 197, 94, 1)',
+                        pointBorderColor: '#fff',
+                        pointHoverBackgroundColor: '#fff',
+                        pointHoverBorderColor: 'rgba(34, 197, 94, 1)',
+                        pointRadius: 4,
+                        pointHoverRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Average Rubric Performance'
+                        },
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        r: {
+                            beginAtZero: true,
+                            max: 100,
+                            min: 0,
+                            ticks: {
+                                stepSize: 20,
+                                callback: function(value) {
+                                    return value + '%';
+                                }
+                            },
+                            pointLabels: {
+                                font: {
+                                    size: 12
+                                },
+                                wrap: true
+                            },
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.1)'
+                            },
+                            angleLines: {
+                                color: 'rgba(0, 0, 0, 0.1)'
+                            }
+                        }
+                    }
+                }
+            });
+        } else {
+            document.getElementById('rubricChart').parentElement.innerHTML = 
+                '<div class="flex items-center justify-center h-64 text-gray-500">No rubric data available</div>';
+        }
+    </script>
+    {% else %}
+    <script>
+        console.log('Advanced analytics not available or user tier insufficient');
+        console.log('Show advanced analytics:', {{ show_advanced_analytics | tojson }});
+        console.log('Advanced analytics data:', {{ advanced_analytics | tojson }});
+    </script>
+    {% endif %}
 </body>
 </html>
