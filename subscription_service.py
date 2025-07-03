@@ -253,6 +253,9 @@ class SubscriptionService:
         if submissions_limit == float('inf'):
             submissions_limit = "Unlimited"
 
+        assignments = db.query(Assignment).filter(Assignment.user_id == user.id).all()
+        submissions_processed = sum(getattr(a, 'submissions_count', 0) for a in assignments if a.status == "completed")
+
         # Calculate days remaining and period_end as a string
         days_remaining = 0
         period_end = None
@@ -283,6 +286,7 @@ class SubscriptionService:
             "assignments_limit": assignments_limit,
             "assignments_remaining": assignments_remaining,
             "submissions_per_assignment": submissions_limit,
+            "submissions_processed": submissions_processed,
             "usage_percentage": round(usage_percentage, 1),
             "days_remaining": days_remaining,
             "period_end": period_end_str,  # Always a string or None
