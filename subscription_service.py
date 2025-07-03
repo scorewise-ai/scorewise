@@ -250,8 +250,9 @@ class SubscriptionService:
 
         # Get submissions info
         submissions_limit = self.get_submissions_per_assignment_limit(user)
+        submissions_limit_display = submissions_limit
         if submissions_limit == float('inf'):
-            submissions_limit = "Unlimited"
+            submissions_limit_display = "Unlimited"
 
         assignments = db.query(Assignment).filter(Assignment.user_id == user.id).all()
         submissions_processed = sum(getattr(a, 'submissions_count', 0) for a in assignments if a.status == "completed")
@@ -285,7 +286,8 @@ class SubscriptionService:
             "assignments_used": assignments_used,
             "assignments_limit": assignments_limit,
             "assignments_remaining": assignments_remaining,
-            "submissions_per_assignment": submissions_limit,
+            "submissions_per_assignment": submissions_limit_display,  
+            "max_submissions": submissions_limit_display,  # Add this as backup
             "submissions_processed": submissions_processed,
             "usage_percentage": round(usage_percentage, 1),
             "days_remaining": days_remaining,
