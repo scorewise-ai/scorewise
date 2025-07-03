@@ -131,6 +131,8 @@ class UsageRecord(Base):
     event_type = Column(String, nullable=False)  # assignment_created, ocr_used, api_call, etc.
     resource_used = Column(String, nullable=True)  # assignment_id, feature_name, etc.
     quantity = Column(Integer, default=1, nullable=False)
+    unit_price   = Column(Float, nullable=True)   # what you charged
+    subtotal     = Column(Float, nullable=True)   # unit_price * quantity
     
     # Billing Information
     billable = Column(Boolean, default=True, nullable=False)
@@ -220,6 +222,7 @@ TIER_CONFIGS = {
         "name": "Free Trial",
         "assignments_per_month": 5,
         "submissions_per_assignment": 10,
+        "overage_price_per_assignment": 0.00,
         "subjects": ["algebra", "biology", "calculus", "chemistry", "physics"],  # STEM only
         "features": {
             "ocr": False,
@@ -237,6 +240,8 @@ TIER_CONFIGS = {
         "name": "Educator Plan",
         "assignments_per_month": 50,
         "submissions_per_assignment": 30,
+        "overage_price_per_assignment": 0.50,      # NEW
+        "overage_price_per_submission": 0.00,      # (optional for later)
         "subjects": "all",
         "features": {
             "ocr": True,
@@ -256,6 +261,7 @@ TIER_CONFIGS = {
         "name": "Professional Plan",
         "assignments_per_month": 200,
         "submissions_per_assignment": 100,
+        "overage_price_per_assignment": 0.40,      # NEW
         "subjects": "all",
         "features": {
             "ocr": True,
@@ -274,8 +280,9 @@ TIER_CONFIGS = {
     },
     SubscriptionTier.INSTITUTION.value: {
         "name": "Institution Plan",
-        "assignments_per_month": "unlimited",
-        "submissions_per_assignment": "unlimited",
+        "assignments_per_month": 500,
+        "submissions_per_assignment": 150,
+        "overage_price_per_assignment": 0.30,      # NEW
         "subjects": "all",
         "features": {
             "ocr": True,
@@ -299,6 +306,7 @@ TIER_CONFIGS = {
         "name": "Beta Tester",
         "assignments_per_month": 50,  # Generous for testing
         "submissions_per_assignment": 30,
+        "overage_price_per_assignment": 0.00,
         "subjects": "all",
         "features": {
             "ocr": True,

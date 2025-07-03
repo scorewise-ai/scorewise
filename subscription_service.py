@@ -2,7 +2,7 @@
 import os
 import stripe
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, List, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
@@ -18,6 +18,13 @@ logger = logging.getLogger(__name__)
 
 # Configure Stripe
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+
+# Overage Price IDs from environment
+OVERAGE_PRICE_IDS = {
+    'educator': os.getenv('PRICE_ID_EDUCATOR_OVERAGE'),
+    'professional': os.getenv('PRICE_ID_PROFESSIONAL_OVERAGE'),
+    'institution': os.getenv('PRICE_ID_INSTITUTION_OVERAGE'),
+}
 
 class SubscriptionService:
     """Service for managing user subscriptions and enforcing tier limits"""
@@ -129,15 +136,21 @@ class SubscriptionService:
         return False, f"Subject '{subject}' not available in {config['name']} plan."
     
     def increment_assignment_usage(self, user: User, db: Session) -> None:
-        """Increment the user's assignment usage counter"""
+        """Increment usage counter and create overage if limit exceeded."""
         self._reset_monthly_usage_if_needed(user, db)
-        
+
         user.assignments_this_month += 1
         db.commit()
-        
-        # Record usage event
+
+        # Always record the creation event
         self.record_usage(user, "assignment_created", db)
-    
+
+        # Check for overage
+        limit = self.get_monthly_assignment_limit(user)
+        if limit != float('inf') and user.assignments_this_month > limit:
+            self._charge_assignment_overage(user, db, extra_qty=1)
+            logger.info(f"⚠️ User {user.email} exceeded assignment limit ({user.assignments_this_month}/{limit})")
+ 
     def record_usage(self, user: User, event_type: str, db: Session, 
                     resource_used: Optional[str] = None, quantity: int = 1, 
                     metadata: Optional[Dict] = None) -> None:
@@ -166,39 +179,117 @@ class SubscriptionService:
             user.assignments_this_month = 0
             user.usage_reset_date = now
             db.commit()
+
+    def _charge_assignment_overage(self, user: User, db: Session, extra_qty: int) -> None:
+        """Create UsageRecord + Stripe invoice item for assignment overages."""
+        cfg = self.get_user_tier_config(user)
+        price = cfg.get("overage_price_per_assignment", 0)
+        if price == 0 or extra_qty <= 0:
+            return  # nothing to charge
+
+        subtotal = round(price * extra_qty, 2)
+
+        # 1. Create a usage record
+        self.record_usage(
+            user, event_type="assignment_overage",
+            db=db,
+            resource_used=None,
+            quantity=extra_qty,
+            metadata={"unit_price": price},
+        )
     
-    def get_usage_summary(self, user: User, db: Session) -> Dict[str, Any]:
-        """Get usage summary for a user"""
-        self._reset_monthly_usage_if_needed(user, db)
-        
-        config = self.get_user_tier_config(user)
-        monthly_limit = config.get("assignments_per_month", 0)
-        
-        # Calculate assignments this month from database if needed
-        month_start = datetime(datetime.now().year, datetime.now().month, 1)
-        assignments_count = db.query(Assignment).filter(
-            and_(
-                Assignment.user_id == user.id,
-                Assignment.created_at >= month_start
-            )
-        ).count()
-        
-        # Update user record if it's out of sync
-        if assignments_count != user.assignments_this_month:
-            user.assignments_this_month = assignments_count
+        # 2. Update the usage record with pricing info
+        latest_record = db.query(UsageRecord).filter(
+            UsageRecord.user_id == user.id,
+            UsageRecord.event_type == "assignment_overage"
+        ).order_by(UsageRecord.timestamp.desc()).first()
+    
+        if latest_record:
+            latest_record.unit_price = price
+            latest_record.subtotal = subtotal
             db.commit()
-        
+
+        # 3. Bill through Stripe using price ID (more reliable)
+        if user.stripe_customer_id and user.subscription_tier in OVERAGE_PRICE_IDS:
+            try:
+                price_id = OVERAGE_PRICE_IDS[user.subscription_tier]
+                if price_id:
+                    stripe.InvoiceItem.create(
+                        customer=user.stripe_customer_id,
+                        price=price_id,
+                        quantity=extra_qty
+                    )
+                    logger.info(f"✓ Created Stripe invoice item: {extra_qty} overage(s) for {user.subscription_tier}")
+                else:
+                    logger.warning(f"No overage price ID configured for tier: {user.subscription_tier}")
+            except Exception as e:
+                logger.error(f"Failed to create Stripe invoice item: {str(e)}")
+    
+    def get_usage_summary(self, user: Any, db: Any) -> Dict[str, Any]:
+        """Get user's current usage summary with overage information"""
+        self._reset_monthly_usage_if_needed(user, db)
+
+        config = self.get_user_tier_config(user)
+
+        # Calculate remaining assignments
+        monthly_limit = self.get_monthly_assignment_limit(user)
+        assignments_used = getattr(user, 'assignments_this_month', 0)
+
+        if monthly_limit == float('inf'):
+            assignments_remaining = "Unlimited"
+            assignments_limit = "Unlimited"
+        else:
+            assignments_remaining = max(0, monthly_limit - assignments_used)
+            assignments_limit = monthly_limit
+
+        # Calculate usage percentage
+        if monthly_limit != float('inf'):
+            usage_percentage = min(100, (assignments_used / monthly_limit) * 100)
+        else:
+            usage_percentage = 0
+
+        # Get submissions info
+        submissions_limit = self.get_submissions_per_assignment_limit(user)
+        if submissions_limit == float('inf'):
+            submissions_limit = "Unlimited"
+
+        # Calculate days remaining and period_end as a string
+        days_remaining = 0
+        period_end = None
+        period_end_str = None
+        # Use getattr to avoid AttributeError if field is missing
+        user_period_end = getattr(user, 'current_period_end', None)
+        user_trial_end = getattr(user, 'trial_end', None)
+        if user_period_end:
+            period_end = user_period_end
+            days_remaining = max(0, (period_end - datetime.now(timezone.utc)).days)
+            # Format as "July 31, 2025"
+            period_end_str = period_end.strftime('%B %d, %Y')
+        elif user_trial_end:
+            period_end = user_trial_end
+            days_remaining = max(0, (period_end - datetime.now(timezone.utc)).days)
+            period_end_str = period_end.strftime('%B %d, %Y')
+
+        status = "Active"
+        if assignments_remaining != "Unlimited" and assignments_remaining <= 0:
+            status = "Over Limit"
+        elif assignments_remaining != "Unlimited" and assignments_remaining < 5:
+            status = "Near Limit"
+
         return {
-            "tier": config["name"],
-            "assignments_used": user.assignments_this_month,
-            "assignments_limit": monthly_limit if monthly_limit != "unlimited" else "Unlimited",
-            "assignments_remaining": (monthly_limit - user.assignments_this_month) if monthly_limit != "unlimited" else "Unlimited",
-            "submissions_per_assignment_limit": config.get("submissions_per_assignment", 0),
-            "period_start": user.current_period_start,
-            "period_end": user.current_period_end,
-            "status": user.subscription_status,
-            "features": config.get("features", {}),
-            "allowed_subjects": self.get_allowed_subjects(user)
+            "tier_name": config["name"],
+            "status": status,
+            "assignments_used": assignments_used,
+            "assignments_limit": assignments_limit,
+            "assignments_remaining": assignments_remaining,
+            "submissions_per_assignment": submissions_limit,
+            "usage_percentage": round(usage_percentage, 1),
+            "days_remaining": days_remaining,
+            "period_end": period_end_str,  # Always a string or None
+            "can_upload": assignments_remaining == "Unlimited" or assignments_remaining > 0,
+            "overage_price": config.get("overage_price_per_assignment", 0),
+            "has_overages": config.get("overage_price_per_assignment", 0) > 0,
+            "features": config.get("features", {})
         }
     
     async def create_stripe_customer(self, user: User, db: Session) -> str:

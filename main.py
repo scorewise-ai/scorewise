@@ -212,6 +212,13 @@ async def pricing(request: Request, db: Session = Depends(get_db)):
             else:
                 stripe_prices[plan][period] = None
 
+    # Inject overage prices so Jinja can render them
+    overage_prices = {
+        tier: cfg.get("overage_price_per_assignment")
+        for tier, cfg in TIER_CONFIGS.items()
+        if tier in ["educator", "professional", "institution"]
+    }
+
     return templates.TemplateResponse("pricing.html", {
         "request": request,
         "user": user,
@@ -219,7 +226,8 @@ async def pricing(request: Request, db: Session = Depends(get_db)):
         "tier_configs": TIER_CONFIGS,
         "stripe_publishable_key": STRIPE_PUBLISHABLE_KEY,
         "price_ids": PRICE_IDS,  
-        "stripe_prices": stripe_prices
+        "stripe_prices": stripe_prices,
+        "overage_prices": overage_prices
     })
 
 @app.get("/upload", response_class=HTMLResponse)
